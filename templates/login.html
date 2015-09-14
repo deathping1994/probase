@@ -1,0 +1,63 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+ <link rel="stylesheet" href="/static/bootstrap.min.css" />
+      <link rel="stylesheet" href="/static/css/font-awesome.css" />
+
+	<title>ProjectBase |Login</title>
+		<meta charset="utf-8">
+		<link href="/static/css/style.css" rel='stylesheet' type='text/css' />
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<script type="application/x-javascript"> addEventListener("load", function() { setTimeout(hideURLbar, 0); }, false); function hideURLbar(){ window.scrollTo(0,1); } </script>
+		<!--webfonts-->
+		<link href='http://fonts.googleapis.com/css?family=Open+Sans:600italic,400,300,600,700' rel='stylesheet' type='text/css'>
+		<!--//webfonts-->
+</head>
+<body>
+<!-- HEADER AND NAVBAR -->
+        <header>
+            <nav class="navbar navbar-default">
+            <div class="container">
+                <div class="navbar-header">
+                    <a class="navbar-brand" href="/"><i class="fa fa-database"></i>Project Base</a>
+                </div>
+
+                <ul class="nav navbar-nav navbar-right">
+                    <li><a href="/search"><i class="fa fa-search"></i> Search</a></li>
+                    <li><a href="#"><i class="fa fa-comment"></i> Feedback</a></li>
+                    {% if not status %}
+                      <li><a href="/register"><i class="fa fa-circle-o-notch"></i> Update Project</a></li>
+                      <li><a href="/register"><i class="fa fa-upload"></i> Register Project</a></li>
+                      <li><a href="/login"><i class="fa fa-key"></i>Login</a></li>
+                    {% elif status %}
+                      <li><a href="/approve"><i class="fa fa-thumbs-o-up"></i> Approve Project</a></li>
+                      <li><a href="#"><i class="fa fa-check-square-o"></i> Evaluate Project</a></li>
+                      <li><a href="/logout"><i class="fa fa-key"></i> Logout {{user}}</a></li>
+                    {% endif %}
+                </ul>
+            </div>
+            </nav>
+        </header>
+	 <!-----start-main---->
+	 <div class="main">
+		<div class="login-form">
+			<h1>Member Login</h1>
+					<div class="head">
+						<img src="/static/images/user.png" alt=""/>
+					</div>
+				<form action="http://localhost:5000/login_action" method="POST">
+						<input type="text" class="text" value="USERNAME"  name="user" onfocus="this.value = '';" onblur="if (this.value == '') {this.value = 'USERNAME';}" >
+						<input type="password" value="Password" name="pass" onfocus="this.value = '';" onblur="if (this.value == '') {this.value = 'Password';}">
+						<div class="submit">
+							<input type="submit" onclick="myFunction()" value="LOGIN"  >
+					</div>	
+					<p><a href="#">Forgot Password ?</a></p>
+				</form>
+			</div>
+			<!--//End-login-form-->
+		</div>
+			 <!-----//end-main---->
+		 		
+</body>
+</html>
