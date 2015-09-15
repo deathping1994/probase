@@ -1,63 +1,71 @@
-from flask import make_response
+from flask import make_response,render_template
 from flask import abort
 from flask import jsonify
-from flask import Flask, Response,render_template
+from flask import Flask, Response
 from flask import request,redirect
 import json
 import requests
 from elasticsearch import Elasticsearch
 from flask.ext.bcrypt import Bcrypt
-from threading import Thread
-from flask.ext.mail import Mail
-from flask.ext.mail import Message
-
-# email server
-MAIL_SERVER = 'smtp.gmail.com'
-MAIL_PORT = 465
-MAIL_USE_TLS = False
-MAIL_USE_SSL = True
-MAIL_USERNAME = 'deathping1994@gmail.com'
-MAIL_PASSWORD = 'bastard007'
-
-# administrator list
-ADMINS = ['deathping1994@gmail.com']
-
-
+from flask.ext.pymongo import PyMongo
+from functools import wraps
 app = Flask("projectbase")
 bcrypt = Bcrypt(app)
-mail = Mail(app)
-from functools import wraps
-# from flask.ext.pymongo import PyMongo
-# mongo=PyMongo(app)
-
-# @app.after_request
-# def after_request(response):
-#   response.headers.add('Access-Control-Allow-Origin', '*')
-#   response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-#   response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE')
-#   return response
-from flask.ext.pymongo import PyMongo
 mongo = PyMongo(app)
 
-def send_async_email(app, msg):
-    with app.app_context():
-        mail.send(msg)
 
-def send_email(subject, sender, recipients, text_body, html_body):
-    msg = Message(subject, sender=sender, recipients=recipients)
-    msg.body = text_body
-    msg.html = html_body
-    thr = Thread(target=send_async_email, args=[app, msg])
-    thr.start()
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not check_status(request.cookies.get("user"),request.cookies.get("authkey")):
+            return jsonify({"Error":"Login Required"}),401
+        return f(*args, **kwargs)
+    return decorated_function
 
-def checkpass(user,pas):
+def send_request(request_type,UserType,MemberCode,DATE1,Password):
+    if(request_type == 'login'):
+        with requests.Session() as c:
+            c.get("https://webkiosk.jiit.ac.in/")
+            params ={'x':'',
+                'txtInst':'Institute',
+                'InstCode':'JIIT',
+                'txtuType':'Member Type',
+                'UserType':UserType,
+                'txtCode':'Enrollment No',
+                'MemberCode':MemberCode,
+                'DOB':'DOB',
+                'DATE1':DATE1,
+                'txtPin':'Password/Pin',
+                'Password':Password,
+                'BTNSubmit':'Submit'}
+            cook=c.cookies['JSESSIONID']
+            cooki=dict(JSESSIONID=cook)
+            print cooki
+    c.post("https://webkiosk.jiit.ac.in/CommonFiles/UserActionn.jsp", data=params,cookies=cooki)
+    response=c.get("https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp")
+    print response.content
+    return response.content
+
+def checkpass(user,pas,UserType,DATE1):
+    MemberCode=user
     com = mongo.db.users.find({'username': user})
     for combo in com:
         print type(combo['password'])
         if bcrypt.check_password_hash(combo['password'],pas) and user==combo['username']:
             return True
         else:
-            return False
+            data=send_request("login",UserType,MemberCode,DATE1,pas)
+            if user in data:
+                mongo.db.users.insert({'username': user,'password': bcrypt.generate_password_hash(pas)})
+                return True
+            else:
+                return False
+    data=send_request("login",UserType,MemberCode,DATE1,pas)
+    if user in data:
+                mongo.db.users.insert({'username': user,'password': bcrypt.generate_password_hash(pas)})
+                return True
+    else:
+        return False
 def check_status(user,authkey):
     com = mongo.db.users.find({'username': user})
     for combo in com:
@@ -66,76 +74,26 @@ def check_status(user,authkey):
         else:
             return False
 
-
-@app.route('/')
-def index():
-    if not check_status(request.cookies.get("user"),request.cookies.get("authkey")):
-        stat=False
-    else:
-        stat=True
-    return render_template('index.html',user=request.cookies.get("user"),status=stat),200
-@app.route('/new_user',methods=['POST'])
-def new_user():
-    print request.form['pass']
-    mongo.db.users.insert({'username': request.form['user'],'password': bcrypt.generate_password_hash(request.form['pass'])})
-    return jsonify({"success":"true"}),200
 @app.route('/logout')
+@login_required
 def logout():
     resp = make_response(render_template('index.html',user="null",status=False),200)
     resp.set_cookie("user","",expires=0)
     resp.set_cookie("authkey","",expires=0)
     return resp
-@app.route('/search')
-def search():
-    if not check_status(request.cookies.get("user"),request.cookies.get("authkey")):
-        stat=False
-    else:
-        stat=True
-    return render_template('index.html',user=request.cookies.get("user"),status=stat),200
 
 @app.route('/login_action',methods=['POST'])
 def login_action():
     if not request.form or not 'user' in request.form or not 'pass' in request.form:
-        return render_template('login.html',user="",status=False),200
+        return jsonify({"Error":"Enter User name and password"}),403
     else:
-        if checkpass(request.form['user'],request.form['pass']):
-            resp = make_response(render_template('index.html',user=request.form['user'],status=True),200)
-            resp.set_cookie("user",request.form['user'])
-            com = mongo.db.users.find({'username': request.form['user']})
-            for combo in com:
-                print request.form['user']
-                print combo['password']
-                resp.set_cookie("authkey",bcrypt.generate_password_hash(request.form['user'] + combo['password']))
-            return resp
+        if checkpass(request.form['user'],request.form['pass'],request.form['UserType'],request.form['DATE1']):
+            return jsonify({"success":"logged in","authkey":bcrypt.generate_password_hash(request.form['user'] + request.form['pass'])}),200
         else:
-            abort(401)
-@app.route('/login')
-def login():
-    if not check_status(request.cookies.get("user"),request.cookies.get("authkey")):
-        return render_template('login.html',user="",status=False),200
-    else:
-        return render_template('index.html',user=request.cookies.get("user"),status=True),200
-@app.route('/register')
-def register():
-    if 'user' in request.cookies:
-        if not check_status(request.cookies.get("user"),request.cookies.get("authkey")):
-            stat=False
-        else:
-            stat=True
-    else:
-        stat=False
-    return render_template('register.html',user=request.cookies.get("user"),status=stat),200
-
-@app.route('/approve')
-def approve_project():
-    if not check_status(request.cookies.get("user"),request.cookies.get("authkey")):
-        return render_template('login',user="",status=False),200
-    else:
-        return render_template("dashboard.html",user=request.cookies.get("user"),status=True),200
-
+            return jsonify({"Error":"Incorrect Username Password"}),403
 
 @app.route('/base0/api/v1.0/projects', methods=['GET'])
-
+@login_required
 def create_project():
     es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
     if len(request.args.get("authkey",""))==0 or len(request.args.get("title",""))==0:
@@ -171,6 +129,7 @@ def create_project():
 #   return jsonify(re), 201
 
 @app.route('/base0/api/v1.0/projects/action', methods=['POST'])
+@login_required
 def ae_project():
     es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
     data=request.get_json(force=True)
@@ -198,11 +157,9 @@ def ae_project():
 
 @app.route('/feedback', methods=['GET'])
 def feedback():
-    send_email("feedback:projectbase",MAIL_USERNAME,ADMINS[0],"testmessage","<b>gaurav</b>")
     return "sent",200
 
 @app.route('/base0/api/v1.0/projects/list', methods=['GET'])
-
 def list_project():
     es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
     qbody={
@@ -217,7 +174,6 @@ def list_project():
     return jsonify(re), 200
 
 @app.route('/base0/api/v1.0/projects/search', methods=['GET'])
-
 def search_project():
     print (request.args.get("q"))
     es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
