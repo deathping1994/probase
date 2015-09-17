@@ -1,9 +1,8 @@
-from flask import make_response,render_template
 from flask import abort
 from flask import jsonify
-from flask import Flask, Response
-from flask import request,redirect
-import json
+from flask import Flask
+from flask import request
+from flask.ext.cors import CORS,cross_origin
 import requests
 from elasticsearch import Elasticsearch
 from flask.ext.bcrypt import Bcrypt
@@ -12,85 +11,94 @@ from functools import wraps
 app = Flask("projectbase")
 bcrypt = Bcrypt(app)
 mongo = PyMongo(app)
+cors = CORS(app, resources={r"*": {"origins": "*"}})
+app.config['CORS_HEADERS'] = 'Content-Type'
 
 
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not check_status(request.cookies.get("user"),request.cookies.get("authkey")):
-            return jsonify({"Error":"Login Required"}),401
+        data = request.get_json(force=True)
+        if not check_status(data['authkey']):
+            return jsonify(error="Login Required")
         return f(*args, **kwargs)
     return decorated_function
 
-def send_request(request_type,UserType,MemberCode,DATE1,Password):
-    if(request_type == 'login'):
-        with requests.Session() as c:
-            c.get("https://webkiosk.jiit.ac.in/")
+
+def check_status(authkey):
+    if mongo.db.users.find_one({'authkey': authkey}):
+        return True
+    else:
+        return False
+
+
+@app.route('/')
+def hello_world():
+    return jsonify(success="It works!")
+
+
+@app.route('/login_action', methods=['GET', 'POST'])
+@cross_origin(origin='localhost', headers=['Content- Type', 'Authorization'])
+def login_action():
+    data = request.get_json(force=True)
+    if data['user']== "" or data['pass']=="" or data['date1']=="":
+        return jsonify(error="Enter User name and password")
+    else:
+        c = requests.Session()
+        try:
+            c.get("https://webkiosk.jiit.ac.in")
             params ={'x':'',
                 'txtInst':'Institute',
                 'InstCode':'JIIT',
                 'txtuType':'Member Type',
-                'UserType':UserType,
+                'UserType':data['usertype'],
                 'txtCode':'Enrollment No',
-                'MemberCode':MemberCode,
+                'MemberCode':data['user'],
                 'DOB':'DOB',
-                'DATE1':DATE1,
+                'DATE1':data['date1'],
                 'txtPin':'Password/Pin',
-                'Password':Password,
+                'Password':data['pass'],
                 'BTNSubmit':'Submit'}
             cook=c.cookies['JSESSIONID']
             cooki=dict(JSESSIONID=cook)
-            print cooki
-    c.post("https://webkiosk.jiit.ac.in/CommonFiles/UserActionn.jsp", data=params,cookies=cooki)
-    response=c.get("https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp")
-    print response.content
-    return response.content
-
-def checkpass(user,pas,UserType,DATE1):
-    MemberCode=user
-    com = mongo.db.users.find({'username': user})
-    for combo in com:
-        print type(combo['password'])
-        if bcrypt.check_password_hash(combo['password'],pas) and user==combo['username']:
-            return True
-        else:
-            data=send_request("login",UserType,MemberCode,DATE1,pas)
-            if user in data:
-                mongo.db.users.insert({'username': user,'password': bcrypt.generate_password_hash(pas)})
-                return True
+            reslogin=c.post("https://webkiosk.jiit.ac.in/CommonFiles/UserActionn.jsp", data=params,cookies=cooki)
+            if not "Locked" in reslogin.content:
+                res=c.get("https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp")
+                if data['user'] in res.content:
+                    c.close()
+                    authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
+                    mongo.db.users.insert({"user" : data['user'] , "authkey" : authkey})
+                    return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey)
+                else:
+                    print res.content
+                    c.close()
+                    return jsonify(error="Could Not Login,Invalid Details!")
             else:
-                return False
-    data=send_request("login",UserType,MemberCode,DATE1,pas)
-    if user in data:
-                mongo.db.users.insert({'username': user,'password': bcrypt.generate_password_hash(pas)})
-                return True
-    else:
-        return False
-def check_status(user,authkey):
-    com = mongo.db.users.find({'username': user})
-    for combo in com:
-        if bcrypt.check_password_hash(authkey,combo['username']+combo['password']) and user==combo['username']:
-            return True
-        else:
-            return False
+                c.close()
+                return jsonify(error="Account Locked. Contact ADMINISTRATOR.")
+        except (requests.ConnectionError,requests.HTTPError) as error:
+            print error
+            return jsonify(error="Could Not Connect to Internet. Webkiosk May be Down or unreachable")
 
-@app.route('/logout')
-@login_required
+
+@app.route('/logout',methods=['GET', 'POST'])
+@cross_origin(origin='localhost',headers=['Content- Type','Authorization'])
 def logout():
-    resp = make_response(render_template('index.html',user="null",status=False),200)
-    resp.set_cookie("user","",expires=0)
-    resp.set_cookie("authkey","",expires=0)
-    return resp
-
-@app.route('/login_action',methods=['POST'])
-def login_action():
-    if not request.form or not 'user' in request.form or not 'pass' in request.form:
-        return jsonify({"Error":"Enter User name and password"}),403
+    data = request.get_json(force=True)
+    if not check_status(data['authkey']):
+        return jsonify(error="Login Required")
     else:
-        if checkpass(request.form['user'],request.form['pass'],request.form['UserType'],request.form['DATE1']):
-            return jsonify({"success":"logged in","authkey":bcrypt.generate_password_hash(request.form['user'] + request.form['pass'])}),200
-        else:
-            return jsonify({"Error":"Incorrect Username Password"}),403
+        mongo.db.users.find_one_and_delete({"authkey":data['authkey']})
+        return jsonify(success="Successfully Logged Off!")
+
+@app.route('/status', methods=['GET', 'POST'])
+@cross_origin(origin='localhost',headers=['Content- Type','Authorization'])
+def temp():
+    data=request.get_json(force=True)
+    if check_status(data['authkey']):
+        return jsonify(status="logged in")
+    else:
+        return jsonify(status="NOt logged in")
 
 @app.route('/base0/api/v1.0/projects', methods=['GET'])
 @login_required
