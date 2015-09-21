@@ -1,4 +1,5 @@
 from flask import abort
+from hashids import Hashids
 from flask import jsonify
 from flask import Flask
 from flask import request
@@ -13,7 +14,7 @@ bcrypt = Bcrypt(app)
 mongo = PyMongo(app)
 cors = CORS(app, resources={r"*": {"origins": "*"}})
 app.config['CORS_HEADERS'] = 'Content-Type'
-
+es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
 
 def login_required(f):
     @wraps(f)
@@ -30,6 +31,34 @@ def check_status(authkey):
         return True
     else:
         return False
+#
+# def verify_group(students,projecttype):
+#     if len(students)!=0
+#         query={'projecttype': projecttype ,"members": { $in: students[] }}
+#         groups = mongo.db.groups.find(query)
+#         if groups.size()==0:
+#             return True
+#         else
+#             return False
+
+
+@app.route('/check_group')
+@cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
+@login_required
+def check_group():
+    data=request.get_json(force=True)
+    if len(data['members'])!=0:
+        members=data['members']
+        query={'projecttype': data['projecttype'] ,
+               "members": { "$in": members }}
+        groups = mongo.db.groups.find(query)
+        if groups.size()==0:
+            return jsonify(success="No Conflicting Groups found. Proceed to next step.",error="")
+        else:
+            return jsonify(error="Someone in your group is also a member in other group.",groups=groups)
+    else:
+        return jsonify(error="At least one member is required per project.")
+
 
 
 @app.route('/')
@@ -91,6 +120,7 @@ def logout():
         mongo.db.users.find_one_and_delete({"authkey":data['authkey']})
         return jsonify(success="Successfully Logged Off!")
 
+
 @app.route('/status', methods=['GET', 'POST'])
 @cross_origin(origin='localhost',headers=['Content- Type','Authorization'])
 def temp():
@@ -100,41 +130,44 @@ def temp():
     else:
         return jsonify(status="NOt logged in")
 
-@app.route('/base0/api/v1.0/projects', methods=['GET'])
+
+@app.route('/v1/project/create', methods=['GET','POST'])
 @login_required
-def create_project():
-    es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
-    if len(request.args.get("authkey",""))==0 or len(request.args.get("title",""))==0:
-        abort(400)
-    # for s in request.form['stu']:
-    #   print s
-    task = {
-        'authkey': bcrypt.generate_password_hash(request.args.get("authkey","")),
-        'title': request.args.get("title",""),
-        'description': request.args.get("description",""),
-        'mentor': request.args.get("mentor",""),
-        'languages': request.args.get("lang",""),
-        'students':request.args.get("students",""),
-        'approved': False,
-        }
-    es.index(index='sw',doc_type='projects',body=task)
-    return jsonify(task), 201
+def create_group():
+    data=request.get_json(force=True)
+    if data['title'] == "" or len(data['members'])==0:
+        return jsonify(error="Incomplete Details provided")
+    else:
+        try:
+            res=mongo.db.groups.insert({"projecttype":data['projecttype'],"members":data['membersid']})
+            if res['nInserted']==1:
+                task = {
+                    'title': data['title'],
+                    'description': data['description'],
+                    'members': data['members'],
+                    'projecttype': data['projecttype'],
+                    'approved': False
+                    }
+                es.index(index='projects', doc_type='projects', body=task)
+            else:
+                raise Exception
+        except Exception:
+            return jsonify(error="Oops ! Something Went wrong, Try Again")
 
-#@app.route('/base0/api/v1.0/projects/update', methods=['POST'])
+@app.route('/v1/projects/update/<project_id>',methods=['POST','GET'])
+def update_project():
+    data=request.get_json(force=True)
+    qbody={
+          "query" : {
+          "match" : {
+             "title" : request.args.get("q","")
+                      }
+                  }
+          }
+    re=es.search(index="sw",body=qbody)
+    re=re['hits']
+    return jsonify(re), 201
 
-# def update_project():
-#   print (request.args.get("q"))
-#   es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
-#   qbody={
-#           "query" : {
-#           "match" : {
-#              "title" : request.args.get("q","")
-#                       }
-#                   }
-#           }
-#   re=es.search(index="sw",body=qbody)
-#   re=re['hits']
-#   return jsonify(re), 201
 
 @app.route('/base0/api/v1.0/projects/action', methods=['POST'])
 @login_required
