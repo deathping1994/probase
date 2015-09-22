@@ -60,6 +60,7 @@ def check_group():
 
 
 @app.route('/feedback')
+@cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
 def feedback():
     data=request.get_json(force=True)
     if data['msg']=="":
@@ -245,10 +246,6 @@ def ae_project():
             es.update(index="sw",doc_type='projects',id=id,body=body);
     return "success", 200
 
-
-@app.route('/feedback', methods=['GET'])
-def feedback():
-    return "sent",200
 
 @app.route('/base0/api/v1.0/projects/list', methods=['GET'])
 def list_project():
