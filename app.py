@@ -1,5 +1,4 @@
-from flask import abort
-from hashids import Hashids
+import smtplib
 from flask import jsonify
 from flask import Flask
 from flask import request
@@ -60,6 +59,30 @@ def check_group():
         return jsonify(error="At least one member is required per project.")
 
 
+@app.route('/feedback')
+def feedback():
+    data=request.get_json(force=True)
+    if data['msg']=="":
+        return jsonify(error="Sorry, we Couldn't find you feedback. May be you missed something !"),200
+    else:
+        try:
+
+            toaddrs = 'deathping1994@gmail.com'
+            if data['from'] !="":
+                fromaddr=data['from']
+            else:
+                fromaddr="deathping1994@gmail.com"
+            mailserver = smtplib.SMTP("smtp.gmail.com:587")
+            mailserver.starttls()
+            mailserver.login(fromaddr,"bastard007")
+            mailserver.sendmail(fromaddr,toaddrs,data['msg'])
+            mailserver.quit()
+            return jsonify(success="Your Feedback is Valuable to us and has been duly recorded, Thanks for your time !",error="")
+        except Exception as err:
+            print err
+            mongo.db.log.insert({"error":str(err)})
+            return jsonify(error="We are really sorry, something went wrong on our end. " +"/n"
+                                 "Event has been reported and will soon be acted upon. Stay Tuned!"),200
 
 @app.route('/')
 def hello_world():
@@ -67,7 +90,7 @@ def hello_world():
 
 
 @app.route('/login_action', methods=['GET', 'POST'])
-@cross_origin(origin='localhost', headers=['Content- Type', 'Authorization'])
+@cross_origin(origin='0.0.0.0', headers=['Content- Type', 'Authorization'])
 def login_action():
     data = request.get_json(force=True)
     if data['user']== "" or data['pass']=="" or data['date1']=="":
@@ -132,7 +155,7 @@ def login_action():
 
 
 @app.route('/logout',methods=['GET', 'POST'])
-@cross_origin(origin='localhost',headers=['Content- Type','Authorization'])
+@cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
 def logout():
     data = request.get_json(force=True)
     if not check_status(data['authkey']):
@@ -143,7 +166,7 @@ def logout():
 
 
 @app.route('/status', methods=['GET', 'POST'])
-@cross_origin(origin='localhost',headers=['Content- Type','Authorization'])
+@cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
 def temp():
     data=request.get_json(force=True)
     if check_status(data['authkey']):
