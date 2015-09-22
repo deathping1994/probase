@@ -91,7 +91,28 @@ def login_action():
             cook=c.cookies['JSESSIONID']
             cooki=dict(JSESSIONID=cook)
             reslogin=c.post("https://webkiosk.jiit.ac.in/CommonFiles/UserActionn.jsp", data=params,cookies=cooki)
-            if not "Locked" in reslogin.content:
+            if "Timeout" in reslogin.content:
+                for i in(0,3):
+                    c.get("https://webkiosk.jiit.ac.in/index.jsp")
+                    params ={'x':'',
+                        'txtInst':'Institute',
+                        'InstCode':'JIIT',
+                        'txtuType':'Member Type',
+                        'UserType':data['usertype'],
+                        'txtCode':'Enrollment No',
+                        'MemberCode':data['user'],
+                        'DOB':'DOB',
+                        'DATE1':data['date1'],
+                        'txtPin':'Password/Pin',
+                        'Password':data['pass'],
+                        'BTNSubmit':'Submit'}
+                    cook=c.cookies['JSESSIONID']
+                    cooki=dict(JSESSIONID=cook)
+                    reslogin=c.post("https://webkiosk.jiit.ac.in/CommonFiles/UserActionn.jsp", data=params,cookies=cooki)
+                    if "Locked" not in reslogin.content:
+                        break
+                    elif i==2:
+                        raise requests.ConnectionError
                 res=c.get("https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp")
                 if data['user'] in res.content:
                     c.close()
@@ -132,15 +153,18 @@ def temp():
 
 
 @app.route('/v1/project/create', methods=['GET','POST'])
-@login_required
+# @login_required
 def create_group():
     data=request.get_json(force=True)
     if data['title'] == "" or len(data['members'])==0:
         return jsonify(error="Incomplete Details provided")
     else:
         try:
+            print "trying to insert in mongodb"
             res=mongo.db.groups.insert({"projecttype":data['projecttype'],"members":data['membersid']})
-            if res['nInserted']==1:
+            print "Document inserted"
+            print str(res)
+            if str(res)!="NULL":
                 task = {
                     'title': data['title'],
                     'description': data['description'],
@@ -148,10 +172,13 @@ def create_group():
                     'projecttype': data['projecttype'],
                     'approved': False
                     }
-                es.index(index='projects', doc_type='projects', body=task)
+                # es.index(index='projects', doc_type='projects', body=task)
+                return jsonify(success="Group Successfully registered!")
             else:
+                print "in else part"
                 raise Exception
-        except Exception:
+        except Exception as e:
+            print e
             return jsonify(error="Oops ! Something Went wrong, Try Again")
 
 @app.route('/v1/projects/update/<project_id>',methods=['POST','GET'])
@@ -234,4 +261,4 @@ def search_project():
     return jsonify(re), 200
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host="0.0.0.0")
