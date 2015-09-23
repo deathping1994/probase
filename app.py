@@ -91,9 +91,10 @@ def hello_world():
 
 
 @app.route('/login_action', methods=['GET', 'POST'])
-@cross_origin(origin='0.0.0.0', headers=['Content- Type', 'Authorization'])
+@cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
 def login_action():
     data = request.get_json(force=True)
+    print str(data)
     if data['user']== "" or data['pass']=="" or data['date1']=="":
         return jsonify(error="Enter User name and password")
     else:
@@ -119,6 +120,16 @@ def login_action():
             if "Locked" in reslogin.content:
                 c.close()
                 return jsonify(error="Account Locked. Contact ADMINISTRATOR.")
+            elif "not a valid" in reslogin.content:
+                c.close()
+                return jsonify(error="Could Not Login,Invalid Details! check your Date of Birth and enrollment no.")
+
+            elif "Invalid" in reslogin.content:
+                c.close()
+                return jsonify(error="Could Not Login,Invalid Details!")
+            elif "Timeout" in res.content:
+                c.close()
+                raise requests.ConnectionError
             else:
                 res=c.get("https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp")
                 if data['user'] in res.content:
@@ -130,7 +141,8 @@ def login_action():
                     raise requests.ConnectionError
                 else:
                     c.close()
-                    return jsonify(error="Could Not Login,Invalid Details!")
+                    return jsonify(error="It's embarrassing, something went wrong on our end. Please try again !")
+
         except (requests.ConnectionError,requests.HTTPError) as error:
             c.close()
             return jsonify(error="Could Not Connect to Internet. Webkiosk May be Down or unreachable")
