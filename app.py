@@ -59,17 +59,17 @@ def check_group():
         return jsonify(error="At least one member is required per project.")
 
 
-@app.route('/feedback')
+@app.route('/feedback',methods=["POST","GET"])
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
 def feedback():
     data=request.get_json(force=True)
-    if data['msg']=="":
+    if data['msg']== "":
         return jsonify(error="Sorry, we Couldn't find you feedback. May be you missed something !"),200
     else:
         try:
 
             toaddrs = 'deathping1994@gmail.com'
-            if data['from'] !="":
+            if data['from'] != "":
                 fromaddr=data['from']
             else:
                 fromaddr="deathping1994@gmail.com"
@@ -115,43 +115,24 @@ def login_action():
             cook=c.cookies['JSESSIONID']
             cooki=dict(JSESSIONID=cook)
             reslogin=c.post("https://webkiosk.jiit.ac.in/CommonFiles/UserActionn.jsp", data=params,cookies=cooki)
-            if "Timeout" in reslogin.content:
-                for i in(0,3):
-                    c.get("https://webkiosk.jiit.ac.in/index.jsp")
-                    params ={'x':'',
-                        'txtInst':'Institute',
-                        'InstCode':'JIIT',
-                        'txtuType':'Member Type',
-                        'UserType':data['usertype'],
-                        'txtCode':'Enrollment No',
-                        'MemberCode':data['user'],
-                        'DOB':'DOB',
-                        'DATE1':data['date1'],
-                        'txtPin':'Password/Pin',
-                        'Password':data['pass'],
-                        'BTNSubmit':'Submit'}
-                    cook=c.cookies['JSESSIONID']
-                    cooki=dict(JSESSIONID=cook)
-                    reslogin=c.post("https://webkiosk.jiit.ac.in/CommonFiles/UserActionn.jsp", data=params,cookies=cooki)
-                    if "Locked" not in reslogin.content:
-                        break
-                    elif i==2:
-                        raise requests.ConnectionError
+            print reslogin.content
+            if "Locked" in reslogin.content:
+                c.close()
+                return jsonify(error="Account Locked. Contact ADMINISTRATOR.")
+            else:
                 res=c.get("https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp")
                 if data['user'] in res.content:
                     c.close()
                     authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
-                    mongo.db.users.insert({"user" : data['user'] , "authkey" : authkey})
-                    return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey)
+                    mongo.db.users.insert({"user" : data['user'] , "authkey" : authkey,"usertype":data['usertype']})
+                    return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype="E")
+                elif "Timeout" in res.content:
+                    raise requests.ConnectionError
                 else:
-                    print res.content
                     c.close()
                     return jsonify(error="Could Not Login,Invalid Details!")
-            else:
-                c.close()
-                return jsonify(error="Account Locked. Contact ADMINISTRATOR.")
         except (requests.ConnectionError,requests.HTTPError) as error:
-            print error
+            c.close()
             return jsonify(error="Could Not Connect to Internet. Webkiosk May be Down or unreachable")
 
 
