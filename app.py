@@ -15,18 +15,28 @@ cors = CORS(app, resources={r"*": {"origins": "*"}})
 app.config['CORS_HEADERS'] = 'Content-Type'
 es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
 
+def adminlogin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        data = request.get_json(force=True)
+        if not check_status(data['authkey'],'E'):
+            return jsonify(error="Teachers Login Required! This Event Will Be Reported.")
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         data = request.get_json(force=True)
-        if not check_status(data['authkey']):
+        if not check_status(data['authkey'],data['usertype']):
             return jsonify(error="Login Required")
         return f(*args, **kwargs)
     return decorated_function
 
 
-def check_status(authkey):
-    if mongo.db.users.find_one({'authkey': authkey}):
+def check_status(authkey,usertype):
+    if mongo.db.users.find_one({'authkey': authkey,'usertype': usertype}):
         return True
     else:
         return False
@@ -85,7 +95,9 @@ def feedback():
             return jsonify(error="We are really sorry, something went wrong on our end. " +"/n"
                                  "Event has been reported and will soon be acted upon. Stay Tuned!"),200
 
-@app.route('/')
+@app.route('/',methods=['POST','GET'])
+@cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
+@login_required
 def hello_world():
     return jsonify(success="It works!")
 
@@ -94,7 +106,6 @@ def hello_world():
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
 def login_action():
     data = request.get_json(force=True)
-    print str(data)
     if data['user']== "" or data['pass']=="" or data['date1']=="":
         return jsonify(error="Enter User name and password")
     else:
@@ -120,42 +131,38 @@ def login_action():
             if "Locked" in reslogin.content:
                 c.close()
                 return jsonify(error="Account Locked. Contact ADMINISTRATOR.")
-            elif "not a valid" in reslogin.content:
-                c.close()
-                return jsonify(error="Could Not Login,Invalid Details! check your Date of Birth and enrollment no.")
-
-            elif "Invalid" in reslogin.content:
+            elif "invalid" in reslogin.content:
                 c.close()
                 return jsonify(error="Could Not Login,Invalid Details!")
-            elif "Timeout" in res.content:
-                c.close()
-                raise requests.ConnectionError
             else:
                 res=c.get("https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp")
                 if data['user'] in res.content:
                     c.close()
                     authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
-                    mongo.db.users.insert({"user" : data['user'] , "authkey" : authkey,"usertype":data['usertype']})
-                    return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype="E")
+                    mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype']}},upsert=True)
+                    return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'])
                 elif "Timeout" in res.content:
                     raise requests.ConnectionError
+                elif "not a valid" in res.content:
+                    c.close()
+                    return jsonify(error="Could Not Login,Invalid Details!")
                 else:
                     c.close()
-                    return jsonify(error="It's embarrassing, something went wrong on our end. Please try again !")
-
+                    return jsonify(error="Could Not Login,Invalid Details! Check your DOB")
         except (requests.ConnectionError,requests.HTTPError) as error:
             c.close()
             return jsonify(error="Could Not Connect to Internet. Webkiosk May be Down or unreachable")
 
 
 @app.route('/logout',methods=['GET', 'POST'])
-@cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
+@cross_origin(origin='*',headers=['Content- Type','Authorization'])
+@login_required
 def logout():
     data = request.get_json(force=True)
-    if not check_status(data['authkey']):
-        return jsonify(error="Login Required")
+    if not check_status(data['authkey'],data['usertype']):
+        return jsonify(error="You need to be logged in before logging out !")
     else:
-        mongo.db.users.find_one_and_delete({"authkey":data['authkey']})
+        mongo.db.users.remove({"authkey": data['authkey']},safe=True)
         return jsonify(success="Successfully Logged Off!")
 
 
@@ -170,7 +177,7 @@ def temp():
 
 
 @app.route('/v1/project/create', methods=['GET','POST'])
-# @login_required
+@login_required
 def create_group():
     data=request.get_json(force=True)
     if data['title'] == "" or len(data['members'])==0:
