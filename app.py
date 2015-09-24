@@ -51,6 +51,14 @@ def check_status(authkey,usertype):
 #             return False
 
 
+def currentuser(authkey,usertype):
+    curruser=mongo.db.users.find_one({'authkey': authkey,'usertype': usertype})
+    print curruser
+    if curruser is not None:
+        return curruser['user']
+    else:
+        return "NULL"
+
 @app.route('/check_group')
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
 @login_required
@@ -61,7 +69,7 @@ def check_group():
         query={'projecttype': data['projecttype'] ,
                "members": { "$in": members }}
         groups = mongo.db.groups.find(query)
-        if groups.size()==0:
+        if groups.count()==0:
             return jsonify(success="No Conflicting Groups found. Proceed to next step.",error="")
         else:
             return jsonify(error="Someone in your group is also a member in other group.",groups=groups)
@@ -71,6 +79,7 @@ def check_group():
 
 @app.route('/feedback',methods=["POST","GET"])
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
+@login_required
 def feedback():
     data=request.get_json(force=True)
     if data['msg']== "":
@@ -185,10 +194,11 @@ def create_group():
     else:
         try:
             print "trying to insert in mongodb"
-            res=mongo.db.groups.insert({"projecttype":data['projecttype'],"members":data['membersid']})
-            print "Document inserted"
-            print str(res)
-            if str(res)!="NULL":
+            members=data['membersid']
+            query={'projecttype': data['projecttype'] ,"members": members }
+            group = mongo.db.groups.find_one(query)
+            print type(group)
+            if group is None and currentuser(data['authkey'],data['usertype']) in members:
                 task = {
                     'title': data['title'],
                     'description': data['description'],
@@ -196,89 +206,82 @@ def create_group():
                     'projecttype': data['projecttype'],
                     'approved': False
                     }
-                # es.index(index='projects', doc_type='projects', body=task)
+                es.index(index='projects', doc_type='projects', body=task)
+                res=mongo.db.groups.insert({"projecttype":data['projecttype'],"members":data['membersid']})
                 return jsonify(success="Group Successfully registered!")
+            elif group is None and currentuser(data['authkey'],data['usertype']) not in members:
+                return jsonify(error="You are not authorised to register this group, this event will be reported !")
             else:
-                print "in else part"
-                raise Exception
+                return jsonify(error="Group Already registered, Use update project option to make changes to your existing project. ")
         except Exception as e:
             print e
             return jsonify(error="Oops ! Something Went wrong, Try Again")
 
-@app.route('/v1/projects/update/<project_id>',methods=['POST','GET'])
-def update_project():
-    data=request.get_json(force=True)
-    qbody={
-          "query" : {
-          "match" : {
-             "title" : request.args.get("q","")
-                      }
-                  }
-          }
-    re=es.search(index="sw",body=qbody)
-    re=re['hits']
-    return jsonify(re), 201
 
+# @app.route('/v1/projects/update/<project_id>',methods=['POST','GET'])
+# def update_project():
+#     data=request.get_json(force=True)
+#     qbody={
+#           "query" : {
+#           "match" : {
+#              "title" : request.args.get("q","")
+#                       }
+#                   }
+#           }
+#     re=es.search(index="sw",body=qbody)
+#     re=re['hits']
+#     return jsonify(re), 201
 
-@app.route('/base0/api/v1.0/projects/action', methods=['POST'])
-@login_required
-def ae_project():
-    es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
-    data=request.get_json(force=True)
-    data_id=data['id']
-    print data_id
-    if data["action"]== "approve":
-        for id in data_id:
-            print id
-            body={
-            "doc" : {
-            "approved" : True
-                    }
-            };
-            es.update(index="sw",doc_type='projects',id=id,body=body);
-    else:
-        for id in data_id:
-            body={
-            "doc" : {
-            "approved" : False
-                    }
-            };
-            es.update(index="sw",doc_type='projects',id=id,body=body);
-    return "success", 200
+#
+# @app.route('/base0/api/v1.0/projects/action', methods=['POST'])
+# @login_required
+# def ae_project():
+#     es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
+#     data=request.get_json(force=True)
+#     data_id=data['id']
+#     print data_id
+#     if data["action"]== "approve":
+#         for id in data_id:
+#             print id
+#             body={
+#             "doc" : {
+#             "approved" : True
+#                     }
+#             };
+#             es.update(index="sw",doc_type='projects',id=id,body=body);
+#     else:
+#         for id in data_id:
+#             body={
+#             "doc" : {
+#             "approved" : False
+#                     }
+#             };
+#             es.update(index="sw",doc_type='projects',id=id,body=body);
+#     return "success", 200
+#
+#
+# @app.route('/base0/api/v1.0/projects/list', methods=['GET'])
+# def list_project():
+#     es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
+#     qbody={
+#             "query" : {
+#             "match" : {
+#             "mentor" : request.cookies.get("user")
+#                     }
+#                         }
+#             }
+#     re=es.search(index="sw",body=qbody)
+#     re=re['hits']
+#     return jsonify(re), 200
 
-
-@app.route('/base0/api/v1.0/projects/list', methods=['GET'])
-def list_project():
-    es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
-    qbody={
-            "query" : {
-            "match" : {
-            "mentor" : request.cookies.get("user")
-                    }
-                        }
-            }
-    re=es.search(index="sw",body=qbody)
-    re=re['hits']
-    return jsonify(re), 200
-
-@app.route('/base0/api/v1.0/projects/search', methods=['GET'])
-def search_project():
-    print (request.args.get("q"))
-    es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
-    if not len(request.args.get("q")):
-        qbody={ "query":{
-                "match_all": {}}}
-    else:
-        qbody={
-            "query" : {
-            "match" : {
-            "title" : request.args.get("q","")
-                        }
-                    }
-            }
-    re=es.search(index="sw",body=qbody)
-    re=re['hits']
-    return jsonify(re), 200
+#
+# @app.route('/base0/api/v1.0/projects/search', methods=['GET'])
+# def search_project():
+#     print (request.args.get("q"))
+#     es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
+#     re=es.search(index="projects", )
+#     re=re['hits']
+#     return jsonify(re), 200
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0")
