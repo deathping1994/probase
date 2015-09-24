@@ -143,6 +143,10 @@ def login_action():
             elif "Invalid" in reslogin.content:
                 c.close()
                 return jsonify(error="Could Not Login,Invalid Details!")
+            elif "Wrong password has been" in reslogin.content:
+                c.close()
+                return jsonify(error="Wrong Password has been entered consecutively 4 times, another try may lock your account.")
+
             elif "valid user" in reslogin.content:
                 c.close()
                 return jsonify(error="You Probably entered incorrect DOB.")
@@ -278,13 +282,12 @@ def create_group():
 #     return jsonify(re), 200
 
 #
-# @app.route('/base0/api/v1.0/projects/search', methods=['GET'])
-# def search_project():
-#     print (request.args.get("q"))
-#     es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
-#     re=es.search(index="projects", )
-#     re=re['hits']
-#     return jsonify(re), 200
+@app.route('/base0/api/v1.0/projects/search', methods=['GET','POST'])
+def search_project():
+    data=request.get_json(force=True)
+    re=es.search(index="projects",q=data['query'])
+    re=re['hits']
+    return jsonify(re), 200
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0")
