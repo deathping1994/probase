@@ -140,9 +140,12 @@ def login_action():
             if "Locked" in reslogin.content:
                 c.close()
                 return jsonify(error="Account Locked. Contact ADMINISTRATOR.")
-            elif "invalid" in reslogin.content:
+            elif "Invalid" in reslogin.content:
                 c.close()
                 return jsonify(error="Could Not Login,Invalid Details!")
+            elif "valid user" in reslogin.content:
+                c.close()
+                return jsonify(error="You Probably entered incorrect DOB.")
             else:
                 res=c.get("https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp")
                 if data['user'] in res.content:
