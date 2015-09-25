@@ -1,4 +1,5 @@
 import smtplib
+from datetime import datetime
 from flask import jsonify
 from flask import Flask
 from flask import request
@@ -35,8 +36,9 @@ def login_required(f):
     return decorated_function
 
 
-def check_status(authkey,usertype):
-    if mongo.db.users.find_one({'authkey': authkey,'usertype': usertype}):
+def check_status(authkey, usertype):
+    res= mongo.db.users.find_and_modify({'authkey': authkey,'usertype': usertype},{"$set":{"loggedat":datetime.utcnow()}})
+    if res is not None:
         return True
     else:
         return False
@@ -53,7 +55,6 @@ def check_status(authkey,usertype):
 
 def currentuser(authkey,usertype):
     curruser=mongo.db.users.find_one({'authkey': authkey,'usertype': usertype})
-    print curruser
     if curruser is not None:
         return curruser['user']
     else:
@@ -155,7 +156,8 @@ def login_action():
                 if data['user'] in res.content:
                     c.close()
                     authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
-                    mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype']}},upsert=True)
+                    mongo.db.users.create_index("loggedat",expireAfterSeconds=120)
+                    mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
                     return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'])
                 elif "Timeout" in res.content:
                     raise requests.ConnectionError
@@ -202,9 +204,10 @@ def create_group():
         try:
             print "trying to insert in mongodb"
             members=data['membersid']
-            query={'projecttype': data['projecttype'] ,"members": members }
+            query={'projecttype': data['projecttype'] ,'members':{ "$in": members } }
             group = mongo.db.groups.find_one(query)
             print type(group)
+            # print group.count()
             if group is None and currentuser(data['authkey'],data['usertype']) in members:
                 task = {
                     'title': data['title'],
