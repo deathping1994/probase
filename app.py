@@ -9,6 +9,7 @@ from elasticsearch import Elasticsearch
 from flask.ext.bcrypt import Bcrypt
 from flask.ext.pymongo import PyMongo
 from functools import wraps
+from bs4 import BeautifulSoup
 app = Flask("projectbase")
 bcrypt = Bcrypt(app)
 mongo = PyMongo(app)
@@ -38,6 +39,8 @@ def login_required(f):
 
 def check_status(authkey, usertype):
     res= mongo.db.users.find_and_modify({'authkey': authkey,'usertype': usertype},{"$set":{"loggedat":datetime.utcnow()}})
+    print res
+
     if res is not None:
         return True
     else:
@@ -116,58 +119,67 @@ def hello_world():
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
 def login_action():
     data = request.get_json(force=True)
-    if data['user']== "" or data['pass']=="" or data['date1']=="":
+    print "inside login_action"
+    if data['user']== "" or data['pass']=="":
         return jsonify(error="Enter User name and password")
     else:
         c = requests.Session()
+        print "c created"
         try:
             c.get("https://webkiosk.jiit.ac.in")
-            params ={'x':'',
-                'txtInst':'Institute',
-                'InstCode':'JIIT',
-                'txtuType':'Member Type',
-                'UserType':data['usertype'],
-                'txtCode':'Enrollment No',
-                'MemberCode':data['user'],
-                'DOB':'DOB',
-                'DATE1':data['date1'],
-                'txtPin':'Password/Pin',
-                'Password':data['pass'],
-                'BTNSubmit':'Submit'}
+            if data['usertype']=='S':
+                params ={'x':'',
+                    'txtInst':'Institute',
+                    'InstCode':'JIIT',
+                    'txtuType':'Member Type',
+                    'UserType':data['usertype'],
+                    'txtCode':'Enrollment No',
+                    'MemberCode':data['user'],
+                    'DOB':'DOB',
+                    'DATE1':data['date1'],
+                    'txtPin':'Password/Pin',
+                    'Password':data['pass'],
+                    'BTNSubmit':'Submit'}
+            else:
+                params ={'x':'',
+                    'txtInst':'Institute',
+                    'InstCode':'JIIT',
+                    'txtuType':'Member Type',
+                    'UserType':data['usertype'],
+                    'txtCode':'Employee Code',
+                    'MemberCode':data['user'],
+                    'DOB':"",
+                    'DATE1':"",
+                    'txtPin':'Password/Pin',
+                    'Password':data['pass'],
+                    'BTNSubmit':'Submit'}
             cook=c.cookies['JSESSIONID']
             cooki=dict(JSESSIONID=cook)
             reslogin=c.post("https://webkiosk.jiit.ac.in/CommonFiles/UserActionn.jsp", data=params,cookies=cooki)
-            print reslogin.content
-            if "Locked" in reslogin.content:
+            if "Error1.jpg" in reslogin.content:
+                html=BeautifulSoup(reslogin.content,'html.parser')
                 c.close()
-                return jsonify(error="Account Locked. Contact ADMINISTRATOR.")
-            elif "Invalid" in reslogin.content:
-                c.close()
-                return jsonify(error="Could Not Login,Invalid Details!")
-            elif "Wrong password has been" in reslogin.content:
-                c.close()
-                return jsonify(error="Wrong Password has been entered consecutively 4 times, another try may lock your account.")
-
-            elif "valid user" in reslogin.content:
-                c.close()
-                return jsonify(error="You Probably entered incorrect DOB.")
+                return jsonify(error=html.b.font.text),200
             else:
-                res=c.get("https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp")
-                if data['user'] in res.content:
-                    c.close()
-                    authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
-                    mongo.db.users.create_index("loggedat",expireAfterSeconds=120)
-                    mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
-                    return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'])
-                elif "Timeout" in res.content:
-                    raise requests.ConnectionError
-                elif "not a valid" in res.content:
-                    c.close()
-                    return jsonify(error="Could Not Login,Invalid Details!")
-                else:
-                    c.close()
-                    return jsonify(error="Could Not Login,Invalid Details! Check your DOB")
-        except (requests.ConnectionError,requests.HTTPError) as error:
+                # if data['usertype']=='S'
+                #     url ="https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp"
+                # res=c.get("https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp")
+                # if data['user'] in res.content:
+                c.close()
+                authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
+                mongo.db.users.create_index("loggedat",expireAfterSeconds=120)
+                mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
+                return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'])
+                # elif "Timeout" in res.content:
+                #     raise requests.ConnectionError
+                # elif "not a valid" in res.content:
+                #     c.close()
+                #     return jsonify(error="Could Not Login,Invalid Details!")
+                # else:
+                #     c.close()
+                #     return jsonify(error="Could Not Login,Invalid Details! Check your DOB")
+        except (Exception) as error:
+            print str(error)
             c.close()
             return jsonify(error="Could Not Connect to Internet. Webkiosk May be Down or unreachable")
 
@@ -209,15 +221,18 @@ def create_group():
             print type(group)
             # print group.count()
             if group is None and currentuser(data['authkey'],data['usertype']) in members:
+                res=mongo.db.groups.insert({"projecttype":data['projecttype'],"members":data['membersid']})
+                print res
                 task = {
                     'title': data['title'],
                     'description': data['description'],
                     'members': data['members'],
                     'projecttype': data['projecttype'],
-                    'approved': False
+                    'approved': False,
+                    'evaluated': False,
+                    'groupid':str(res)
                     }
-                es.index(index='projects', doc_type='projects', body=task)
-                res=mongo.db.groups.insert({"projecttype":data['projecttype'],"members":data['membersid']})
+                print es.index(index='projects', doc_type='projects', body=task)
                 return jsonify(success="Group Successfully registered!")
             elif group is None and currentuser(data['authkey'],data['usertype']) not in members:
                 return jsonify(error="You are not authorised to register this group, this event will be reported !")
@@ -228,19 +243,32 @@ def create_group():
             return jsonify(error="Oops ! Something Went wrong, Try Again")
 
 
-# @app.route('/v1/projects/update/<project_id>',methods=['POST','GET'])
-# def update_project():
-#     data=request.get_json(force=True)
-#     qbody={
-#           "query" : {
-#           "match" : {
-#              "title" : request.args.get("q","")
-#                       }
-#                   }
-#           }
-#     re=es.search(index="sw",body=qbody)
-#     re=re['hits']
-#     return jsonify(re), 201
+@app.route('/v1/projects/<project_id>',methods=['POST','GET'])
+def display_project(project_id):
+    re=es.search(index="sw",id=project_id)
+    return jsonify(re), 200
+
+@app.route('/v1/projects/update/<group_id>',methods=['POST','GET'])
+def update_project(project_id):
+    data=request.get_json(force=True)
+    members=mongo.db.groups.find_one({"id":data['group_id']})
+    try:
+        if currentuser(data['authkey'],data['usertype']) in members['members']:
+            qbody={}
+            if data['description'] is not None:
+                qbody.__setitem__("description",data['description'])
+            if data['additional_links'] is not None:
+                qbody.__setitem__("additional_links",data['additional_links'])
+            if data['synopsis'] is not None:
+                qbody.__setitem__("synopsis",data['synopsis'])
+            if data['projectreport'] is not None:
+                qbody.__setitem__("projectreport",data['projectreport'])
+            re=es.update(index="sw",doc_type='projects',id=members['id'],body=qbody)
+            return jsonify(re), 200
+        else:
+            return jsonify(error="Either You are not part of this group or your project has already been evaluated"),200
+    except Exception:
+        return jsonify(error="Oops something went wrong ! Try again After sometime."),200
 
 #
 # @app.route('/base0/api/v1.0/projects/action', methods=['POST'])
