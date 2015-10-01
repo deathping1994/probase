@@ -177,7 +177,7 @@ def login_action():
                 authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
                 mongo.db.users.create_index("loggedat",expireAfterSeconds=120)
                 mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
-                return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'])
+                return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'],user=data['user'])
                 # elif "Timeout" in res.content:
                 #     raise requests.ConnectionError
                 # elif "not a valid" in res.content:
