@@ -1,6 +1,7 @@
 import smtplib
 from datetime import datetime
 from flask import jsonify
+import json
 from flask import Flask
 from flask import request
 from flask.ext.cors import CORS,cross_origin
@@ -286,21 +287,22 @@ def display_project(project_id):
     return jsonify(re), 200
 
 @app.route('/v1/projects/update/<group_id>',methods=['POST','GET'])
-def update_project(project_id):
+def update_project(group_id):
     data=request.get_json(force=True)
-    members=mongo.db.groups.find_one({"id":data['group_id']})
+    members=mongo.db.groups.find_one({"_id":ObjectId(str(group_id))})
     try:
         if currentuser(data['authkey'],data['usertype']) in members['members']:
             qbody={}
             if data['description'] is not None:
-                qbody.__setitem__("description",data['description'])
+                qbody['description']=data['description']
+                print json.dump(qbody)
             if data['additional_links'] is not None:
-                qbody.__setitem__("additional_links",data['additional_links'])
+                qbody['additional_links']=data['additional_links']
             if data['synopsis'] is not None:
-                qbody.__setitem__("synopsis",data['synopsis'])
+                qbody['synopsis']=data['synopsis']
             if data['projectreport'] is not None:
-                qbody.__setitem__("projectreport",data['projectreport'])
-            re=es.update(index="sw",doc_type='projects',id=members['id'],body=qbody)
+                qbody['projectreport']=data['projectreport']
+            re=es.update(index="sw",doc_type='projects',groupid=group_id,body=json.dump(qbody))
             return jsonify(re), 201
         else:
             return jsonify(error="Either You are not part of this group or your project has already been evaluated"),500
