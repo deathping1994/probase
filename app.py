@@ -93,11 +93,19 @@ def list_projects(user):
             if groups.count()==0:
                 return jsonify(success="You don't have any projects.",error=""),200
             else:
-                print "insid"
-                groupid=[]
+                projects=[]
                 for group in groups:
                     id=str(group['_id'])
-                    groupid.append(id)
+                    qbody={
+                            "query" : {
+                            "match" : {
+                            "groupid" : $in id
+                                    }
+                                        }
+                            }
+                    re=es.search(index="sw",body=qbody)
+                    projects.append(es.get(index="projects", groupid=id))
+                    print projects
                 return jsonify(sccesss="Found projects",groupid=groupid),200
         else:
             return jsonify(error="No user specified"),500
@@ -183,7 +191,7 @@ def login_action():
             if "Error1.jpg" in reslogin.content:
                 html=BeautifulSoup(reslogin.content,'html.parser')
                 c.close()
-                return jsonify(error=html.b.font.text),200
+                return jsonify(error=html.b.font.text),500
             else:
                 # if data['usertype']=='S'
                 #     url ="https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp"
@@ -191,9 +199,9 @@ def login_action():
                 # if data['user'] in res.content:
                 c.close()
                 authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
-                mongo.db.users.create_index("loggedat",expireAfterSeconds=120)
+                mongo.db.users.create_index("loggedat",expireAfterSeconds=300)
                 mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
-                return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'],user=data['user'])
+                return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'],user=data['user']),201
                 # elif "Timeout" in res.content:
                 #     raise requests.ConnectionError
                 # elif "not a valid" in res.content:
@@ -205,7 +213,7 @@ def login_action():
         except (Exception) as error:
             print str(error)
             c.close()
-            return jsonify(error="Could Not Connect to Internet. Webkiosk May be Down or unreachable")
+            return jsonify(error="Could Not Connect to Internet. Webkiosk May be Down or unreachable"),500
 
 
 @app.route('/logout',methods=['GET', 'POST'])
@@ -214,10 +222,10 @@ def login_action():
 def logout():
     data = request.get_json(force=True)
     if not check_status(data['authkey'],data['usertype']):
-        return jsonify(error="You need to be logged in before logging out !")
+        return jsonify(error="You need to be logged in before logging out !"),403
     else:
         mongo.db.users.remove({"authkey": data['authkey']},safe=True)
-        return jsonify(success="Successfully Logged Off!")
+        return jsonify(success="Successfully Logged Off!"),200
 
 
 @app.route('/status', methods=['GET', 'POST'])
@@ -225,17 +233,17 @@ def logout():
 def temp():
     data=request.get_json(force=True)
     if check_status(data['authkey']):
-        return jsonify(status="logged in")
+        return jsonify(status="logged in"),200
     else:
-        return jsonify(status="NOt logged in")
+        return jsonify(status="NOt logged in"),200
 
 
 @app.route('/v1/project/create', methods=['GET','POST'])
 @login_required
 def create_group():
     data=request.get_json(force=True)
-    if data['title'] == "" or len(data['members'])==0:
-        return jsonify(error="Incomplete Details provided")
+    if data['title'] == "" or len(data['members'])==0 len(data['mentor'])==0:
+        return jsonify(error="Incomplete Details provided"),403
     else:
         try:
             print "trying to insert in mongodb"
@@ -254,17 +262,18 @@ def create_group():
                     'projecttype': data['projecttype'],
                     'approved': False,
                     'evaluated': False,
-                    'groupid':str(res)
+                    'groupid':str(res),
+                    'mentor':data['mentor']
                     }
                 print es.index(index='projects', doc_type='projects', body=task)
-                return jsonify(success="Group Successfully registered!")
+                return jsonify(success="Group Successfully registered!"),201
             elif group is None and currentuser(data['authkey'],data['usertype']) not in members:
-                return jsonify(error="You are not authorised to register this group, this event will be reported !")
+                return jsonify(error="You are not authorised to register this group, this event will be reported !"),403
             else:
-                return jsonify(error="Group Already registered, Use update project option to make changes to your existing project. ")
+                return jsonify(error="Group Already registered, Use update project option to make changes to your existing project. "),500
         except Exception as e:
             print e
-            return jsonify(error="Oops ! Something Went wrong, Try Again")
+            return jsonify(error="Oops ! Something Went wrong, Try Again"),500
 
 
 @app.route('/v1/projects/<project_id>',methods=['POST','GET'])
@@ -288,11 +297,11 @@ def update_project(project_id):
             if data['projectreport'] is not None:
                 qbody.__setitem__("projectreport",data['projectreport'])
             re=es.update(index="sw",doc_type='projects',id=members['id'],body=qbody)
-            return jsonify(re), 200
+            return jsonify(re), 201
         else:
-            return jsonify(error="Either You are not part of this group or your project has already been evaluated"),200
+            return jsonify(error="Either You are not part of this group or your project has already been evaluated"),500
     except Exception:
-        return jsonify(error="Oops something went wrong ! Try again After sometime."),200
+        return jsonify(error="Oops something went wrong ! Try again After sometime."),500
 
 #
 # @app.route('/base0/api/v1.0/projects/action', methods=['POST'])
