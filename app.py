@@ -10,6 +10,7 @@ from flask.ext.bcrypt import Bcrypt
 from flask.ext.pymongo import PyMongo
 from functools import wraps
 from bs4 import BeautifulSoup
+from bson.objectid import ObjectId
 from bson.json_util import dumps
 app = Flask("projectbase")
 bcrypt = Bcrypt(app)
@@ -63,6 +64,21 @@ def currentuser(authkey,usertype):
         return curruser['user']
     else:
         return "NULL"
+
+
+@app.route('/teachers',methods=['GET','POST'])
+@cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
+def teachers():
+    try:
+        # print obj_id
+        list=mongo.db.teachers.find_one({"_id":ObjectId("560d604a080ffddcba75178d")})
+        if list is not None:
+            return jsonify(teachers=list['name']),200
+        else:
+            return jsonify(error="No teachers listed"),500
+    except Exception as e:
+        print e
+        return jsonify(error="Oops ! something went wrong."),500
 
 
 @app.route('/projects/<user>',methods=['GET','POST'])
