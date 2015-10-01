@@ -10,6 +10,7 @@ from flask.ext.bcrypt import Bcrypt
 from flask.ext.pymongo import PyMongo
 from functools import wraps
 from bs4 import BeautifulSoup
+from bson.json_util import dumps
 app = Flask("projectbase")
 bcrypt = Bcrypt(app)
 mongo = PyMongo(app)
@@ -63,22 +64,29 @@ def currentuser(authkey,usertype):
     else:
         return "NULL"
 
-@app.route('/check_group')
+
+@app.route('/projects/<user>',methods=['GET','POST'])
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
-@login_required
-def check_group():
-    data=request.get_json(force=True)
-    if len(data['members'])!=0:
-        members=data['members']
-        query={'projecttype': data['projecttype'] ,
-               "members": { "$in": members }}
-        groups = mongo.db.groups.find(query)
-        if groups.count()==0:
-            return jsonify(success="No Conflicting Groups found. Proceed to next step.",error="")
+def list_projects(user):
+    try:
+        if len(user)!=0:
+            members=[user]
+            query={"members": { "$in": members }}
+            groups = mongo.db.groups.find(query,{"_id": 1})
+
+            if groups.count()==0:
+                return jsonify(success="You don't have any projects.",error=""),200
+            else:
+                print "insid"
+                groupid=[]
+                for group in groups:
+                    id=str(group['_id'])
+                    groupid.append(id)
+                return jsonify(sccesss="Found projects",groupid=groupid),200
         else:
-            return jsonify(error="Someone in your group is also a member in other group.",groups=groups)
-    else:
-        return jsonify(error="At least one member is required per project.")
+            return jsonify(error="No user specified"),500
+    except Exception :
+        jsonify(error="OOps ! Something went wrong."),500
 
 
 @app.route('/feedback',methods=["POST","GET"])
@@ -313,12 +321,15 @@ def update_project(project_id):
 #     return jsonify(re), 200
 
 #
-@app.route('/base0/api/v1.0/projects/search', methods=['GET','POST'])
+@app.route('/v1/projects/search', methods=['GET','POST'])
+@cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
 def search_project():
-    data=request.get_json(force=True)
-    re=es.search(index="projects",q=data['query'])
-    re=re['hits']
-    return jsonify(re), 200
-
+    try:
+        data=request.get_json(force=True)
+        re=es.search(index="projects",q=data['query'])
+        re=re['hits']
+        return jsonify(re), 200
+    except Exception :
+        return jsonify(error="Oops ! something went wrong."),500
 if __name__ == '__main__':
     app.run(host="0.0.0.0")
