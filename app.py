@@ -94,19 +94,23 @@ def list_projects(user):
                 return jsonify(success="You don't have any projects.",error=""),200
             else:
                 projects=[]
+                groupids=[]
                 for group in groups:
                     id=str(group['_id'])
-                    qbody={
-                            "query" : {
-                            "match" : {
-                            "groupid" : $in id
+                    groupids.append(id)
+                query={
+                        "query" : {
+                            "filtered" : {
+                                "filter" : {
+                                    "terms" : {
+                                        "groupid" : groupids
                                     }
-                                        }
+                                }
                             }
-                    re=es.search(index="sw",body=qbody)
-                    projects.append(es.get(index="projects", groupid=id))
-                    print projects
-                return jsonify(sccesss="Found projects",groupid=groupid),200
+                        }
+                    }
+                re=es.search(index="projects",body=query)
+                return jsonify(sccesss="Found projects",projects=re['hits']),200
         else:
             return jsonify(error="No user specified"),500
     except Exception :
@@ -242,7 +246,7 @@ def temp():
 @login_required
 def create_group():
     data=request.get_json(force=True)
-    if data['title'] == "" or len(data['members'])==0 len(data['mentor'])==0:
+    if data['title'] == "" or len(data['members'])==0 or len(data['mentor'])==0:
         return jsonify(error="Incomplete Details provided"),403
     else:
         try:
