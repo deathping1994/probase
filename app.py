@@ -104,7 +104,7 @@ def list_projects(user):
                             "filtered" : {
                                 "filter" : {
                                     "terms" : {
-                                        "groupid" : groupids
+                                        "_id" : groupids
                                     }
                                 }
                             }
@@ -267,10 +267,9 @@ def create_group():
                     'projecttype': data['projecttype'],
                     'approved': False,
                     'evaluated': False,
-                    'groupid':str(res),
                     'mentor':data['mentor']
                     }
-                print es.index(index='projects', doc_type='projects', body=task)
+                print es.index(index='projects',id=str(res), doc_type='projects', body=task)
                 return jsonify(success="Group Successfully registered!"),201
             elif group is None and currentuser(data['authkey'],data['usertype']) not in members:
                 return jsonify(error="You are not authorised to register this group, this event will be reported !"),403
@@ -287,22 +286,25 @@ def display_project(project_id):
     return jsonify(re), 200
 
 @app.route('/v1/projects/update/<group_id>',methods=['POST','GET'])
+@login_required
 def update_project(group_id):
     data=request.get_json(force=True)
     members=mongo.db.groups.find_one({"_id":ObjectId(str(group_id))})
     try:
         if currentuser(data['authkey'],data['usertype']) in members['members']:
             qbody={}
-            if data['description'] is not None:
+            if 'description' in data:
                 qbody['description']=data['description']
-                print json.dump(qbody)
-            if data['additional_links'] is not None:
+            if 'additional_links' in data:
                 qbody['additional_links']=data['additional_links']
-            if data['synopsis'] is not None:
+            if 'synopsis' in data:
+                print "found synopsis"
                 qbody['synopsis']=data['synopsis']
-            if data['projectreport'] is not None:
+            if 'projectreport' in data:
                 qbody['projectreport']=data['projectreport']
-            re=es.update(index="sw",doc_type='projects',groupid=group_id,body=json.dump(qbody))
+            print qbody
+            re=es.update(index="projects",doc_type="projects",id=group_id,body={"doc":json.dumps(qbody)})
+            print re
             return jsonify(re), 201
         else:
             return jsonify(error="Either You are not part of this group or your project has already been evaluated"),500
