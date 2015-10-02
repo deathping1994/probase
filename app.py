@@ -267,7 +267,12 @@ def create_group():
                     'projecttype': data['projecttype'],
                     'approved': False,
                     'evaluated': False,
-                    'mentor':data['mentor']
+                    'mentor':data['mentor'],
+                    'synopsis': data['synopsis'],
+                    'additional_link':data['additional_links'],
+                    'source_code':data['source_code'],
+                    'project_report': data['project_report'],
+                    'rating':data['rating']
                     }
                 print es.index(index='projects',id=str(res), doc_type='projects', body=task)
                 return jsonify(success="Group Successfully registered!"),201
@@ -300,11 +305,11 @@ def update_project(group_id):
             if 'synopsis' in data:
                 print "found synopsis"
                 qbody['synopsis']=data['synopsis']
-            if 'projectreport' in data:
-                qbody['projectreport']=data['projectreport']
-            print qbody
+            if 'project_report' in data:
+                qbody['project_report']=data['project_report']
+            if 'project_report' in data:
+                qbody['source_code']=data['source_code']
             re=es.update(index="projects",doc_type="projects",id=group_id,body={"doc":json.dumps(qbody)})
-            print re
             return jsonify(success="Changes successfully Saved!"), 201
         else:
             return jsonify(error="Either You are not part of this group or your project has already been evaluated"),500
