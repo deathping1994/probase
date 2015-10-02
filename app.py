@@ -305,7 +305,7 @@ def update_project(group_id):
             print qbody
             re=es.update(index="projects",doc_type="projects",id=group_id,body={"doc":json.dumps(qbody)})
             print re
-            return jsonify(re), 201
+            return jsonify(success="Changes successfully Saved!"), 201
         else:
             return jsonify(error="Either You are not part of this group or your project has already been evaluated"),500
     except Exception:
