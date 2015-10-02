@@ -267,12 +267,12 @@ def create_group():
                     'projecttype': data['projecttype'],
                     'approved': False,
                     'evaluated': False,
-                    'mentor':data['mentor'],
-                    'synopsis': data['synopsis'],
-                    'additional_link':data['additional_links'],
-                    'source_code':data['source_code'],
-                    'project_report': data['project_report'],
-                    'rating':data['rating']
+                    'mentor': data['mentor'],
+                    'synopsis':"",
+                    'additional_link':"",
+                    'source_code':"",
+                    'project_report': "",
+                    'rating':""
                     }
                 print es.index(index='projects',id=str(res), doc_type='projects', body=task)
                 return jsonify(success="Group Successfully registered!"),201
