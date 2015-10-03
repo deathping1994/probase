@@ -31,6 +31,8 @@ def adminlogin_required(f):
     def decorated_function(*args, **kwargs):
         data = request.get_json(force=True)
         if not check_status(data['authkey'],'E'):
+            err={"error":"Teachers Login Required! This Event Will Be Reported.","user": data['user'],"time": datetime.now()}
+                log(err)
             return jsonify(error="Teachers Login Required! This Event Will Be Reported."),403
         return f(*args, **kwargs)
     return decorated_function
@@ -82,7 +84,7 @@ def teachers():
         else:
             return jsonify(error="No teachers listed"),500
     except Exception as e:
-        print e
+        log(e)
         return jsonify(error="Oops ! something went wrong."),500
 
 
@@ -118,7 +120,8 @@ def list_projects(user):
                 return jsonify(success="Found projects",projects=re['hits']),200
         else:
             return jsonify(error="No user specified"),500
-    except Exception :
+    except Exception as e:
+        log(e)
         jsonify(error="OOps ! Something went wrong."),500
 
 
@@ -275,11 +278,14 @@ def create_group():
                     'additional_link':"",
                     'source_code':"",
                     'project_report': "",
-                    'rating':""
+                    'rating':"",
+                    'remarks':""
                     }
                 print es.index(index='projects',id=str(res), doc_type='projects', body=task)
                 return jsonify(success="Group Successfully registered!"),201
             elif group is None and currentuser(data['authkey'],data['usertype']) not in members:
+                err={"error":"You are not authorised to register this group, this event will be reported !","user": members,"time": datetime.now()}
+                log(err)
                 response= jsonify(error="You are not authorised to register this group, this event will be reported !")
                 response.status_code=403
                 return response
@@ -308,22 +314,18 @@ def update_project(group_id):
     print type(members)
     try:
         if currentuser(data['authkey'],data['usertype']) in members['members']:
-            print "inside try"
             qbody={"doc":{}}
             if 'description' in data:
                 qbody['doc']['description']=data['description']
-                print "found"
             if 'additional_links' in data:
                 qbody['doc']['additional_links']=data['additional_links']
             if 'synopsis' in data:
-                print "found synopsis"
                 qbody['doc']['synopsis']=data['synopsis']
             if 'project_report' in data:
                 qbody['doc']['project_report']=data['project_report']
             if 'source_code' in data:
                 qbody['doc']['source_code']=data['source_code']
             body=json.dumps(qbody)
-            print body
             re=es.update(index="projects",doc_type="projects",id=group_id,body=body)
             return jsonify(success="Changes successfully Saved!"), 201
         else:
