@@ -4,6 +4,7 @@ from datetime import datetime
 from flask import jsonify
 import json
 from flask import Flask
+import urllib2
 from flask import request
 from flask.ext.cors import CORS,cross_origin
 import requests
@@ -43,8 +44,6 @@ def login_required(f):
 
 def check_status(authkey, usertype):
     res= mongo.db.users.find_and_modify({'authkey': authkey,'usertype': usertype},{"$set":{"loggedat":datetime.utcnow()}})
-    print res
-
     if res is not None:
         return True
     else:
@@ -148,7 +147,6 @@ def feedback():
 
 @app.route('/',methods=['POST','GET'])
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
-@login_required
 def hello_world():
     return jsonify(success="It works!")
 
@@ -293,44 +291,42 @@ def create_group():
 
 @app.route('/v1/projects/<project_id>',methods=['POST','GET'])
 def display_project(project_id):
-    re=es.search(index="sw",id=project_id)
+    re=es.search(index="projects",id=project_id)
     return jsonify(re), 200
 
 @app.route('/v1/projects/update/<group_id>',methods=['POST','GET'])
 @login_required
+# @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
 def update_project(group_id):
+    print group_id
     data=request.get_json(force=True)
-    members=mongo.db.groups.find_one({"_id":ObjectId(str(group_id))})
+    print data
+    members=mongo.db.groups.find_one({"_id":ObjectId(group_id)})
+    print type(members)
     try:
         if currentuser(data['authkey'],data['usertype']) in members['members']:
-            qbody={}
+            print "inside try"
+            qbody={"doc":{}}
             if 'description' in data:
-                qbody['description']=data['description']
+                qbody['doc']['description']=data['description']
+                print "found"
             if 'additional_links' in data:
-                qbody['additional_links']=data['additional_links']
+                qbody['doc']['additional_links']=data['additional_links']
             if 'synopsis' in data:
                 print "found synopsis"
-                qbody['synopsis']=data['synopsis']
+                qbody['doc']['synopsis']=data['synopsis']
             if 'project_report' in data:
-                qbody['project_report']=data['project_report']
+                qbody['doc']['project_report']=data['project_report']
             if 'source_code' in data:
-                qbody['source_code']=data['source_code']
-            print qbody
-            url = 'http://localhost:9200/projects/projects/'+str(group_id)+"/_update"
-            data = {
-                'doc': json.dumps(qbody)
-                }
-            # have to send the data as JSON
-            data = json.dumps(data)
-            req = urllib2.Request(url, data, headers)
-            out = urllib2.urlopen(req)
-            print out.read()
-            # re=es.index(index="projects",doc_type="projects",id=group_id,body={"doc":json.dumps(qbody)})
-            # print re
+                qbody['doc']['source_code']=data['source_code']
+            body=json.dumps(qbody)
+            print body
+            re=es.update(index="projects",doc_type="projects",id=group_id,body=body)
             return jsonify(success="Changes successfully Saved!"), 201
         else:
             return jsonify(error="Either You are not part of this group or your project has already been evaluated"),500
-    except Exception:
+    except Exception as e:
+        print e
         return jsonify(error="Oops something went wrong ! Try again After sometime."),500
 
 #
