@@ -1,3 +1,4 @@
+
 import smtplib
 from datetime import datetime
 from flask import jsonify
@@ -25,7 +26,7 @@ def adminlogin_required(f):
     def decorated_function(*args, **kwargs):
         data = request.get_json(force=True)
         if not check_status(data['authkey'],'E'):
-            return jsonify(error="Teachers Login Required! This Event Will Be Reported.")
+            return jsonify(error="Teachers Login Required! This Event Will Be Reported."),403
         return f(*args, **kwargs)
     return decorated_function
 
@@ -35,7 +36,7 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         data = request.get_json(force=True)
         if not check_status(data['authkey'],data['usertype']):
-            return jsonify(error="Login Required")
+            return jsonify(error="Login Required"),403
         return f(*args, **kwargs)
     return decorated_function
 
@@ -72,7 +73,7 @@ def currentuser(authkey,usertype):
 def teachers():
     try:
         # print obj_id
-        list=mongo.db.teachers.find_one({"_id":ObjectId("560d604a080ffddcba75178d")})
+        list=mongo.db.teachers.find_one({"_id":ObjectId("560d61b16349a32238c39497")})
         if list is not None:
             return jsonify(teachers=list['name']),200
         else:
@@ -111,7 +112,7 @@ def list_projects(user):
                         }
                     }
                 re=es.search(index="projects",body=query)
-                return jsonify(sccesss="Found projects",projects=re['hits']),200
+                return jsonify(success="Found projects",projects=re['hits']),200
         else:
             return jsonify(error="No user specified"),500
     except Exception :
@@ -124,7 +125,7 @@ def list_projects(user):
 def feedback():
     data=request.get_json(force=True)
     if data['msg']== "":
-        return jsonify(error="Sorry, we Couldn't find you feedback. May be you missed something !"),200
+        return jsonify(error="Sorry, we Couldn't find your feedback. May be you missed something !"),403
     else:
         try:
 
@@ -143,7 +144,7 @@ def feedback():
             print err
             mongo.db.log.insert({"error":str(err)})
             return jsonify(error="We are really sorry, something went wrong on our end. " +"/n"
-                                 "Event has been reported and will soon be acted upon. Stay Tuned!"),200
+                                 "Event has been reported and will soon be acted upon. Stay Tuned!"),500
 
 @app.route('/',methods=['POST','GET'])
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
@@ -247,8 +248,9 @@ def temp():
 @login_required
 def create_group():
     data=request.get_json(force=True)
-    if data['title'] == "" or len(data['members'])==0 or len(data['mentor'])==0:
-        return jsonify(error="Incomplete Details provided"),403
+    print data
+    if data['title'] == "" or len(data['membersid'])==0 or len(data['mentor'])==0:
+        return jsonify(error="Incomplete Details provided"),500
     else:
         try:
             print "trying to insert in mongodb"
@@ -277,9 +279,13 @@ def create_group():
                 print es.index(index='projects',id=str(res), doc_type='projects', body=task)
                 return jsonify(success="Group Successfully registered!"),201
             elif group is None and currentuser(data['authkey'],data['usertype']) not in members:
-                return jsonify(error="You are not authorised to register this group, this event will be reported !"),403
+                response= jsonify(error="You are not authorised to register this group, this event will be reported !")
+                response.status_code=403
+                return response
             else:
-                return jsonify(error="Group Already registered, Use update project option to make changes to your existing project. "),500
+                response= jsonify(error="Group Already registered, Use update project option to make changes to your existing project. ")
+                response.status_code=500
+                return response
         except Exception as e:
             print e
             return jsonify(error="Oops ! Something Went wrong, Try Again"),500
@@ -307,9 +313,20 @@ def update_project(group_id):
                 qbody['synopsis']=data['synopsis']
             if 'project_report' in data:
                 qbody['project_report']=data['project_report']
-            if 'project_report' in data:
+            if 'source_code' in data:
                 qbody['source_code']=data['source_code']
-            re=es.update(index="projects",doc_type="projects",id=group_id,body={"doc":json.dumps(qbody)})
+            print qbody
+            url = 'http://localhost:9200/projects/projects/'+str(group_id)+"/_update"
+            data = {
+                'doc': json.dumps(qbody)
+                }
+            # have to send the data as JSON
+            data = json.dumps(data)
+            req = urllib2.Request(url, data, headers)
+            out = urllib2.urlopen(req)
+            print out.read()
+            # re=es.index(index="projects",doc_type="projects",id=group_id,body={"doc":json.dumps(qbody)})
+            # print re
             return jsonify(success="Changes successfully Saved!"), 201
         else:
             return jsonify(error="Either You are not part of this group or your project has already been evaluated"),500
