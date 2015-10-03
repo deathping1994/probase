@@ -22,6 +22,10 @@ cors = CORS(app, resources={r"*": {"origins": "*"}})
 app.config['CORS_HEADERS'] = 'Content-Type'
 es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
 
+def log(e):
+    mongo.db.logs.insert({"error":str(e)})
+    return True
+
 def adminlogin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -140,8 +144,7 @@ def feedback():
             mailserver.quit()
             return jsonify(success="Your Feedback is Valuable to us and has been duly recorded, Thanks for your time !",error="")
         except Exception as err:
-            print err
-            mongo.db.log.insert({"error":str(err)})
+            log(err)
             return jsonify(error="We are really sorry, something went wrong on our end. " +"/n"
                                  "Event has been reported and will soon be acted upon. Stay Tuned!"),500
 
@@ -285,7 +288,7 @@ def create_group():
                 response.status_code=500
                 return response
         except Exception as e:
-            print e
+            log(e)
             return jsonify(error="Oops ! Something Went wrong, Try Again"),500
 
 
@@ -326,37 +329,37 @@ def update_project(group_id):
         else:
             return jsonify(error="Either You are not part of this group or your project has already been evaluated"),500
     except Exception as e:
-        print e
+        log(e)
         return jsonify(error="Oops something went wrong ! Try again After sometime."),500
 
-#
-# @app.route('/base0/api/v1.0/projects/action', methods=['POST'])
-# @login_required
-# def ae_project():
-#     es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
-#     data=request.get_json(force=True)
-#     data_id=data['id']
-#     print data_id
-#     if data["action"]== "approve":
-#         for id in data_id:
-#             print id
-#             body={
-#             "doc" : {
-#             "approved" : True
-#                     }
-#             };
-#             es.update(index="sw",doc_type='projects',id=id,body=body);
-#     else:
-#         for id in data_id:
-#             body={
-#             "doc" : {
-#             "approved" : False
-#                     }
-#             };
-#             es.update(index="sw",doc_type='projects',id=id,body=body);
-#     return "success", 200
-#
-#
+
+@app.route('/v1/projects/<projectid>/<action>', methods=['POST'])
+@adminlogin_required
+def ae_project(projectid,action):
+    try:
+        data=request.get_json(force=True)
+        if action== "approve":
+            body={
+            "doc" : {
+                "approved" : True
+                        }}
+            es.update(index="projects",doc_type='projects',id=projectid,body=body)
+            return jsonify(success="Changes have been saved."),201
+        elif action=="evaluate":
+            body={
+                "doc" : {
+                "evaluated" : True,
+                'rating': data['rating'],
+                'remarks':data['remarks']
+                        }
+                }
+            es.update(index="projects",doc_type='projects',id=projectid,body=body)
+            return jsonify(success="Changes have been saved"), 201
+        else:
+            return jsonify(error="Invalid Project ID or action specified")
+    except Exception as e:
+        log(e)
+        return jsonify(error="Something Seems Fishy, Probably the network here sucks."),500
 # @app.route('/base0/api/v1.0/projects/list', methods=['GET'])
 # def list_project():
 #     es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
@@ -380,7 +383,8 @@ def search_project():
         re=es.search(index="projects",q=data['query'])
         re=re['hits']
         return jsonify(re), 200
-    except Exception :
+    except Exception as e:
+        log(e)
         return jsonify(error="Oops ! something went wrong."),500
 if __name__ == '__main__':
     app.run(host="0.0.0.0")
