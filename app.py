@@ -125,6 +125,34 @@ def list_projects(user):
         jsonify(error="OOps ! Something went wrong."),500
 
 
+@app.route('/mentor/projects/<mentor>',methods=['GET','POST'])
+@cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
+def list_mentor_projects(mentor):
+    try:
+        if len(mentor)!=0:
+            mentorarr=[mentor]
+            query={
+                    "query" : {
+                        "filtered" : {
+                            "filter" : {
+                                "term" : {
+                                    "mentor": mentorarr
+                                }
+                            }
+                        }
+                    }
+                }
+            print "gugu"
+            re=es.search(index="projects",body=query)
+            return jsonify(success="Found projects",projects=re['hits']),200
+        else:
+            return jsonify(error="No user specified"),500
+    except Exception as e:
+        log(e)
+        jsonify(error="OOps ! Something went wrong."),500
+
+
+
 @app.route('/feedback',methods=["POST","GET"])
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
 @login_required
