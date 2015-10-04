@@ -32,7 +32,7 @@ def adminlogin_required(f):
         data = request.get_json(force=True)
         if not check_status(data['authkey'],'E'):
             err={"error":"Teachers Login Required! This Event Will Be Reported.","user": data['user'],"time": datetime.now()}
-                log(err)
+            log(err)
             return jsonify(error="Teachers Login Required! This Event Will Be Reported."),403
         return f(*args, **kwargs)
     return decorated_function
@@ -253,6 +253,7 @@ def temp():
 def create_group():
     data=request.get_json(force=True)
     print data
+    res=""
     if data['title'] == "" or len(data['membersid'])==0 or len(data['mentor'])==0:
         return jsonify(error="Incomplete Details provided"),500
     else:
@@ -284,7 +285,8 @@ def create_group():
                 print es.index(index='projects',id=str(res), doc_type='projects', body=task)
                 return jsonify(success="Group Successfully registered!"),201
             elif group is None and currentuser(data['authkey'],data['usertype']) not in members:
-                err={"error":"You are not authorised to register this group, this event will be reported !","user": members,"time": datetime.now()}
+                time=datetime.now()
+                err={"error":"You are not authorised to register this group, this event will be reported !","user": members,"time":time}
                 log(err)
                 response= jsonify(error="You are not authorised to register this group, this event will be reported !")
                 response.status_code=403
@@ -294,6 +296,7 @@ def create_group():
                 response.status_code=500
                 return response
         except Exception as e:
+            mongo.db.groups.remove({"_id":ObjectId(str(res))},safe=True)
             log(e)
             return jsonify(error="Oops ! Something Went wrong, Try Again"),500
 
@@ -357,6 +360,16 @@ def ae_project(projectid,action):
                 }
             es.update(index="projects",doc_type='projects',id=projectid,body=body)
             return jsonify(success="Changes have been saved"), 201
+        elif action=="disapprove":
+            body={
+                "doc" : {
+                "approved" : False,
+                'remarks':data['remarks']
+                        }
+                }
+            es.update(index="projects",doc_type='projects',id=projectid,body=body)
+            return jsonify(success="Changes have been saved"), 201
+
         else:
             return jsonify(error="Invalid Project ID or action specified")
     except Exception as e:
