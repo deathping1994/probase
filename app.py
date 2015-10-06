@@ -210,44 +210,32 @@ def login_action():
                     'txtPin':'Password/Pin',
                     'Password':data['pass'],
                     'BTNSubmit':'Submit'}
-            else:
-                params ={'x':'',
-                    'txtInst':'Institute',
-                    'InstCode':'JIIT',
-                    'txtuType':'Member Type',
-                    'UserType':data['usertype'],
-                    'txtCode':'Employee Code',
-                    'MemberCode':data['user'],
-                    'DOB':"",
-                    'DATE1':"",
-                    'txtPin':'Password/Pin',
-                    'Password':data['pass'],
-                    'BTNSubmit':'Submit'}
-            cook=c.cookies['JSESSIONID']
-            cooki=dict(JSESSIONID=cook)
-            reslogin=c.post("https://webkiosk.jiit.ac.in/CommonFiles/UserActionn.jsp", data=params,cookies=cooki)
-            if "Error1.jpg" in reslogin.content:
-                html=BeautifulSoup(reslogin.content,'html.parser')
-                c.close()
-                return jsonify(error=html.b.font.text),500
-            else:
-                # if data['usertype']=='S'
-                #     url ="https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp"
-                # res=c.get("https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp")
-                # if data['user'] in res.content:
-                c.close()
+                cook=c.cookies['JSESSIONID']
+                cooki=dict(JSESSIONID=cook)
+                reslogin=c.post("https://webkiosk.jiit.ac.in/CommonFiles/UserActionn.jsp", data=params,cookies=cooki)
+                if "Error1.jpg" in reslogin.content:
+                    html=BeautifulSoup(reslogin.content,'html.parser')
+                    c.close()
+                    return jsonify(error=html.b.font.text),500
+                else:
+                     c.close()
                 authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
                 mongo.db.users.create_index("loggedat",expireAfterSeconds=300)
                 mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
                 return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'],user=data['user']),201
-                # elif "Timeout" in res.content:
-                #     raise requests.ConnectionError
-                # elif "not a valid" in res.content:
-                #     c.close()
-                #     return jsonify(error="Could Not Login,Invalid Details!")
-                # else:
-                #     c.close()
-                #     return jsonify(error="Could Not Login,Invalid Details! Check your DOB")
+            else:
+                res=mongo.db.admin.find_one({"user":data['user']})
+                print res
+                if bcrypt.check_password_hash(str(res['password']).encode('utf-8'),data['pass']):
+                    print "inside if"
+                    authkey=bcrypt.generate_password_hash(res['user']+res['password']+str(datetime.now()).encode('utf-8'))
+                    print "ds"
+                    mongo.db.users.create_index("loggedat",expireAfterSeconds=300)
+                    print ("12")
+                    mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
+                    return jsonify(error="",success="Successfully Logged in!",authkey=authkey,usertype="E"),201
+                else:
+                    return  jsonify(error="Invalid username password"),403
         except (Exception) as error:
             print str(error)
             c.close()
@@ -418,6 +406,20 @@ def ae_project(projectid,action):
 #     return jsonify(re), 200
 
 #
+
+@app.route('/register',methods=["GET","POST"])
+@cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
+def register():
+    try:
+        data=request.get_json(force=True)
+        mongo.db.admin.insert({"user":data['user'],"password":bcrypt.generate_password_hash(data['password'])})
+        return jsonify(success="User successfully registered!"),201
+    except Exception as e:
+        print e
+        return jsonify(error="Something went wrong!"),500
+
+
+
 @app.route('/v1/projects/search', methods=['GET','POST'])
 @cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
 def search_project():
