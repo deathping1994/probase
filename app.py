@@ -211,6 +211,7 @@ def login_action():
                     'Password':data['pass'],
                     'BTNSubmit':'Submit'}
             else:
+                print data['usertype']
                 params ={'x':'',
                     'txtInst':'Institute',
                     'InstCode':'JIIT',
@@ -218,14 +219,15 @@ def login_action():
                     'UserType':data['usertype'],
                     'txtCode':'Employee Code',
                     'MemberCode':data['user'],
-                    'DOB':"",
-                    'DATE1':"",
+                    'DOB':'',
+                    'DATE1':'',
                     'txtPin':'Password/Pin',
                     'Password':data['pass'],
                     'BTNSubmit':'Submit'}
             cook=c.cookies['JSESSIONID']
             cooki=dict(JSESSIONID=cook)
             reslogin=c.post("https://webkiosk.jiit.ac.in/CommonFiles/UserActionn.jsp", data=params,cookies=cooki)
+            print reslogin
             if "Error1.jpg" in reslogin.content:
                 html=BeautifulSoup(reslogin.content,'html.parser')
                 c.close()
