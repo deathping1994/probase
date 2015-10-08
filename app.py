@@ -78,7 +78,7 @@ def currentuser(authkey,usertype):
 def teachers():
     try:
         # print obj_id
-        list=mongo.db.teachers.find_one({"_id":ObjectId("560d61b16349a32238c39497")})
+        list=mongo.db.teachers.find_one({"_id":ObjectId("560d604a080ffddcba75178d")})
         if list is not None:
             return jsonify(teachers=list['name']),200
         else:
@@ -190,9 +190,12 @@ def hello_world():
 def login_action():
     data = request.get_json(force=True)
     print "inside login_action"
-    if data['user']== "" or data['pass']=="":
-        return jsonify(error="Enter User name and password")
+    if not (("user" in data) and ('pass' in data) and ('usertype' in data)):
+        return jsonify(error="Key error, please provide all fields"),500
     else:
+        if data['usertype']=="S":
+            if not('date1' in data):
+                return jsonify(error="Key error , provide date1 field"),500
         c = requests.Session()
         print "c created"
         try:
