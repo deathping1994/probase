@@ -1,9 +1,9 @@
-
 import smtplib
 from datetime import datetime
 from flask import jsonify
 import json
 from flask import Flask
+import random
 import urllib2
 from flask import request
 from flask.ext.cors import CORS,cross_origin
@@ -71,6 +71,30 @@ def currentuser(authkey,usertype):
         return curruser['user']
     else:
         return "NULL"
+
+
+@app.route('/students/<batch>/list',methods=['GET','POST'])
+@cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
+def studentlist(batch):
+    try:
+        batchs=str(batch).split('-')
+        eno="131031"
+        student={}
+        student_list=[]
+        for x in batchs:
+            for i in range (0,30):
+                student['name']="abc"+str(i)
+                student['eno']=eno+str(10*i)
+                if x !="all":
+                    student['batch']=x
+                else:
+                    student['batch']= random.choice('ABC')+str(random.randint(1,10))
+                student_list.append(student.copy())
+        return jsonify(students=student_list),200
+    except Exception as e:
+        log(e)
+        print str(e)
+        return jsonify(error="Oops ! something went wrong."),500
 
 
 @app.route('/teachers',methods=['GET','POST'])
@@ -432,5 +456,36 @@ def search_project():
     except Exception as e:
         log(e)
         return jsonify(error="Oops ! something went wrong."),500
+
+
+# @app.route('/webkiosk', methods=['GET','POST'])
+# @cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
+# def search_project():
+#     try:
+#         c = requests.Session()
+#         print "c created"
+#
+#         c.get("https://webkiosk.jiit.ac.in")
+#         params ={'x':'',
+#             'txtInst':'Institute',
+#             'InstCode':'JIIT',
+#             'txtuType':'Member Type',
+#             'UserType':data['usertype'],
+#             'txtCode':'Employee Code',
+#             'MemberCode':JIIT1582,
+#             'DOB':"",
+#             'DATE1':"",
+#             'txtPin':'Password/Pin',
+#             'Password':,
+#             'BTNSubmit':'Submit'}
+#         cook=c.cookies['JSESSIONID']
+#         cooki=dict(JSESSIONID=cook)
+#         reslogin=c.post("https://webkiosk.jiit.ac.in/EmployeeFiles/AcademicInfo/NewDailyStudentAttendanceEntry1.jsp", data=params,cookies=cooki)
+#         print reslogin.content
+#     except Exception as e:
+#         log(e)
+#         return jsonify(error="Oops ! something went wrong."),500
+
+
 if __name__ == '__main__':
-    app.run(host="0.0.0.0")
+    app.run(host="0.0.0.0",debug=True)
