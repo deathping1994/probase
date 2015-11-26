@@ -450,12 +450,16 @@ def ae_project(projectid,action):
 def search_project():
     try:
         data=request.get_json(force=True)
+        fields= [ "title^3", "description^2","projecttype^1","evaluated","approved","mentor","synopsis"]
+        if "type" in data:
+            if data['type']=="similar":
+                fields=[ "title^3", "description^2","projecttype^1"]
         qbody={
                 "query": {
                     "multi_match": {
                         "query":       data['query'],
                         "type":        "cross_fields",
-                        "fields":      [ "title^2", "description" ]
+                        "fields":      fields
                     }
                 }
             }
@@ -464,6 +468,7 @@ def search_project():
         return jsonify(re), 200
     except Exception as e:
         log(e)
+        print str(e)
         return jsonify(error="Oops ! something went wrong."),500
 
 
