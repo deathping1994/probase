@@ -450,7 +450,16 @@ def ae_project(projectid,action):
 def search_project():
     try:
         data=request.get_json(force=True)
-        re=es.search(index="projects",q=data['query'])
+        qbody={
+                "query": {
+                    "multi_match": {
+                        "query":       data['query'],
+                        "type":        "cross_fields",
+                        "fields":      [ "title^2", "description" ]
+                    }
+                }
+            }
+        re=es.search(index="projects",body=qbody)
         re=re['hits']
         return jsonify(re), 200
     except Exception as e:
