@@ -47,7 +47,26 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-
+def notify(tags,msg):
+    headers={}
+    data={}
+    par=request.get_json(force=True)
+    try:
+        data['platform']=[1]
+        data['msg']=msg
+        data['tags']=tags
+        data['payload']={"largeIcon":"http://cdn.mysitemyway.com/etc-mysitemyway/icons/legacy-previews/icons/blue-jelly-icons-alphanumeric/069535-blue-jelly-icon-alphanumeric-letter-p.png"}
+        headers['x-pushbots-appid']="564e3f56177959ce468b4569"
+        headers['x-pushbots-secret']="bafdd9608dab716baabad599cc6c477e"
+        headers['Content-Type']="application/json"
+        r=requests.post("https://api.pushbots.com/push/all",headers=headers)
+        if r.status_code==200:
+            return True
+        else:
+            return False
+    except Exception as e:
+        print str(e)
+        return False
 def check_status(authkey, usertype):
     res= mongo.db.users.find_and_modify({'authkey': authkey,'usertype': usertype},{"$set":{"loggedat":datetime.utcnow()}})
     if res is not None:
@@ -264,7 +283,10 @@ def login_action():
                 # if data['user'] in res.content:
                 c.close()
                 authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
-                mongo.db.users.create_index("loggedat",expireAfterSeconds=300)
+                if (data['usertype']=='S'):
+                    mongo.db.users.create_index("loggedat",expireAfterSeconds=2000)
+                else:
+                    mongo.db.users.create_index("loggedat",expireAfterSeconds=500)
                 mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
                 return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'],user=data['user']),201
                 # elif "Timeout" in res.content:
@@ -385,6 +407,7 @@ def update_project(group_id):
                 qbody['doc']['source_code']=data['source_code']
             body=json.dumps(qbody)
             re=es.update(index="projects",doc_type="projects",id=group_id,body=body)
+
             return jsonify(success="Changes successfully Saved!"), 201
         else:
             return jsonify(error="Either You are not part of this group or your project has already been evaluated"),500
