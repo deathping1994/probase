@@ -450,32 +450,30 @@ def search_project():
         query=request.args.get("query","")
         size=request.args.get("size","10")
         page=request.args.get("from","0")
-        source=request.args.get("source","")
+        source=request.args.get("source","projects")
+        type=request.args.get("type","")
         fields= [ "title^1.8", "description^1.2","projecttype^1","evaluated","approved","mentor","synopsis^1.1","languages^1.01"]
-        if "type" in data:
-            if data['type']=="similar":
-                fields=[ "title^1.8", "description^1.1","projecttype^1","languages^1.01"]
-            elif source=="github":
-                fields=[ "title^1.8", "description^1.1","languages^1.01"]
+        if type=="similar":
+            fields=[ "title^1.8", "description^1.1","projecttype^1","languages^1.01"]
+        elif source=="github_repos":
+            fields=[ "title^1.8", "description^1.1","languages^1.01"]
         qbody={
                 "query": {
                     "multi_match": {
-                        "query":       data['query'],
+                        "query":       str(query),
                         "type":        "cross_fields",
                         "fields":      fields
                     }
                 }
             }
         params={"from":int(page)}
-        re=es.search(index="projects",body=qbody,size=size,params=params)
+        re=es.search(index=source,body=qbody,size=size,params=params)
         re=re['hits']
         return jsonify(re), 200
     except Exception as e:
         log(e)
+        print e
         return jsonify(error=str(e)),500
-
-@app.route('/v1/projects/search', methods=['GET','POST'])
-@cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0",debug=True)
