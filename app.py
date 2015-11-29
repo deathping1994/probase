@@ -205,18 +205,17 @@ def feedback():
         return jsonify(error="Sorry, we Couldn't find your feedback. May be you missed something !"),403
     else:
         try:
-
-            toaddrs = 'deathping1994@gmail.com'
-            if data['from'] != "":
-                fromaddr=data['from']
+            data={'to':"gshukla66@gmail.com",
+              'subject':"Probase:BUG|FEEDBACK",
+              'message':"FROM:"+data['from']+"\n"+data['msg'],
+              "token":"$2b$12$8/Z.2WDlk9VVWVND/DVtgej5z.pxKakZYSfkGdLQCIy7VCXgm8VNm"
+              }
+            print data
+            r= requests.post("http://sendmail.gauravshukla.xyz:8080/mailer/561e7e12a4fabe0943650ca2",json=data)
+            if r.status_code=="200":
+                return jsonify(success="Your Feedback is Valuable to us and has been duly recorded, Thanks for your time !",error="")
             else:
-                fromaddr="deathping1994@gmail.com"
-            mailserver = smtplib.SMTP("smtp.gmail.com:587")
-            mailserver.starttls()
-            mailserver.login(fromaddr,"bastard007")
-            mailserver.sendmail(fromaddr,toaddrs,data['msg'])
-            mailserver.quit()
-            return jsonify(success="Your Feedback is Valuable to us and has been duly recorded, Thanks for your time !",error="")
+                raise requests.ConnectionError
         except Exception as err:
             log(err)
             return jsonify(error="We are really sorry, something went wrong on our end. " +"/n"
