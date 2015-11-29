@@ -277,10 +277,6 @@ def login_action():
                 c.close()
                 return jsonify(error=html.b.font.text),500
             else:
-                # if data['usertype']=='S'
-                #     url ="https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp"
-                # res=c.get("https://webkiosk.jiit.ac.in/StudentFiles/Academic/StudentAttendanceList.jsp")
-                # if data['user'] in res.content:
                 c.close()
                 authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
                 if (data['usertype']=='S'):
@@ -289,14 +285,6 @@ def login_action():
                     mongo.db.users.create_index("loggedat",expireAfterSeconds=500)
                 mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
                 return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'],user=data['user']),201
-                # elif "Timeout" in res.content:
-                #     raise requests.ConnectionError
-                # elif "not a valid" in res.content:
-                #     c.close()
-                #     return jsonify(error="Could Not Login,Invalid Details!")
-                # else:
-                #     c.close()
-                #     return jsonify(error="Could Not Login,Invalid Details! Check your DOB")
         except (Exception) as error:
             print str(error)
             c.close()
@@ -357,7 +345,8 @@ def create_group():
                     'source_code':"",
                     'project_report': "",
                     'rating':"",
-                    'remarks':""
+                    'remarks':"",
+                    'languages':""
                     }
                 print es.index(index='projects',id=str(res), doc_type='projects', body=task)
                 return jsonify(success="Group Successfully registered!"),201
@@ -453,30 +442,21 @@ def ae_project(projectid,action):
     except Exception as e:
         log(e)
         return jsonify(error="Something Seems Fishy, Probably the network here sucks."),500
-# @app.route('/base0/api/v1.0/projects/list', methods=['GET'])
-# def list_project():
-#     es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
-#     qbody={
-#             "query" : {
-#             "match" : {
-#             "mentor" : request.cookies.get("user")
-#                     }
-#                         }
-#             }
-#     re=es.search(index="sw",body=qbody)
-#     re=re['hits']
-#     return jsonify(re), 200
 
-#
 @app.route('/v1/projects/search', methods=['GET','POST'])
 @cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
 def search_project():
     try:
-        data=request.get_json(force=True)
-        fields= [ "title^3", "description^2","projecttype^1","evaluated","approved","mentor","synopsis"]
+        query=request.args.get("query","")
+        size=request.args.get("size","10")
+        page=request.args.get("from","0")
+        source=request.args.get("source","")
+        fields= [ "title^1.8", "description^1.2","projecttype^1","evaluated","approved","mentor","synopsis^1.1","languages^1.01"]
         if "type" in data:
             if data['type']=="similar":
-                fields=[ "title^3", "description^2","projecttype^1"]
+                fields=[ "title^1.8", "description^1.1","projecttype^1","languages^1.01"]
+            elif source=="github":
+                fields=[ "title^1.8", "description^1.1","languages^1.01"]
         qbody={
                 "query": {
                     "multi_match": {
@@ -486,43 +466,16 @@ def search_project():
                     }
                 }
             }
-        re=es.search(index="projects",body=qbody)
+        params={"from":int(page)}
+        re=es.search(index="projects",body=qbody,size=size,params=params)
         re=re['hits']
         return jsonify(re), 200
     except Exception as e:
         log(e)
-        print str(e)
-        return jsonify(error="Oops ! something went wrong."),500
+        return jsonify(error=str(e)),500
 
-
-# @app.route('/webkiosk', methods=['GET','POST'])
-# @cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
-# def search_project():
-#     try:
-#         c = requests.Session()
-#         print "c created"
-#
-#         c.get("https://webkiosk.jiit.ac.in")
-#         params ={'x':'',
-#             'txtInst':'Institute',
-#             'InstCode':'JIIT',
-#             'txtuType':'Member Type',
-#             'UserType':data['usertype'],
-#             'txtCode':'Employee Code',
-#             'MemberCode':JIIT1582,
-#             'DOB':"",
-#             'DATE1':"",
-#             'txtPin':'Password/Pin',
-#             'Password':,
-#             'BTNSubmit':'Submit'}
-#         cook=c.cookies['JSESSIONID']
-#         cooki=dict(JSESSIONID=cook)
-#         reslogin=c.post("https://webkiosk.jiit.ac.in/EmployeeFiles/AcademicInfo/NewDailyStudentAttendanceEntry1.jsp", data=params,cookies=cooki)
-#         print reslogin.content
-#     except Exception as e:
-#         log(e)
-#         return jsonify(error="Oops ! something went wrong."),500
-
+@app.route('/v1/projects/search', methods=['GET','POST'])
+@cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0",debug=True)
