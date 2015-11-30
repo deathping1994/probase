@@ -47,6 +47,16 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+
+def projectnotification(projectid,action):
+    try:
+        members=mongo.db.groups.find_one({"_id":ObjectId(group_id)})
+        message="Your %s project has been %s.",(members['projecttype'],action)
+        notify(message,members['members'])
+        return True
+    except Exception as e:
+        raise e
+
 @app.route('/pushnotification',methods=['GET','POST'])
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
 def notify(tags,msg):
@@ -191,7 +201,6 @@ def list_mentor_projects(mentor):
 
 @app.route('/feedback',methods=["POST","GET"])
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
-@login_required
 def feedback():
     data=request.get_json(force=True)
     if data['msg']== "":
@@ -205,10 +214,7 @@ def feedback():
               }
             print data
             r= requests.post("http://sendmail.gauravshukla.xyz:8080/mailer/561e7e12a4fabe0943650ca2",json=data)
-            if r.status_code=="200":
-                return jsonify(success="Your Feedback is Valuable to us and has been duly recorded, Thanks for your time !",error="")
-            else:
-                raise requests.ConnectionError
+            return jsonify(success="Your Feedback is Valuable to us and has been duly recorded, Thanks for your time !",error="")
         except Exception as err:
             log(err)
             return jsonify(error="We are really sorry, something went wrong on our end. " +"/n"
@@ -323,7 +329,6 @@ def create_group():
         return jsonify(error="Incomplete Details provided"),500
     else:
         try:
-            print "trying to insert in mongodb"
             members=data['membersid']
             query={'projecttype': data['projecttype'] ,'members':{ "$in": members } }
             group = mongo.db.groups.find_one(query)
@@ -348,7 +353,9 @@ def create_group():
                     'remarks':"",
                     'languages':""
                     }
-                print es.index(index='projects',id=str(res), doc_type='projects', body=task)
+                print es.index(index='probase_repos',id=str(res), doc_type='projects', body=task)
+                message="Your %s Project has been successfully registered.",(res['projecttype'])
+                notify(message,members['members'])
                 return jsonify(success="Group Successfully registered!"),201
             elif group is None and currentuser(data['authkey'],data['usertype']) not in members:
                 time=datetime.now()
@@ -396,7 +403,8 @@ def update_project(group_id):
                 qbody['doc']['source_code']=data['source_code']
             body=json.dumps(qbody)
             re=es.update(index="projects",doc_type="projects",id=group_id,body=body)
-
+            message="Your "+members['projecttype']+" Project has been successfully Updated"
+            notify(members['members'],message)
             return jsonify(success="Changes successfully Saved!"), 201
         else:
             return jsonify(error="Either You are not part of this group or your project has already been evaluated"),500
@@ -416,6 +424,7 @@ def ae_project(projectid,action):
                 "approved" : True
                         }}
             es.update(index="projects",doc_type='projects',id=projectid,body=body)
+            project_notification(projectid,action)
             return jsonify(success="Changes have been saved."),201
         elif action=="evaluate":
             body={
@@ -426,6 +435,7 @@ def ae_project(projectid,action):
                         }
                 }
             es.update(index="projects",doc_type='projects',id=projectid,body=body)
+            project_notification(projectid,action)
             return jsonify(success="Changes have been saved"), 201
         elif action=="disapprove":
             body={
@@ -435,6 +445,7 @@ def ae_project(projectid,action):
                         }
                 }
             es.update(index="projects",doc_type='projects',id=projectid,body=body)
+            project_notification(projectid,action)
             return jsonify(success="Changes have been saved"), 201
 
         else:
@@ -442,6 +453,7 @@ def ae_project(projectid,action):
     except Exception as e:
         log(e)
         return jsonify(error="Something Seems Fishy, Probably the network here sucks."),500
+
 
 @app.route('/v1/projects/search', methods=['GET','POST'])
 @cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
