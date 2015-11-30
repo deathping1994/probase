@@ -59,26 +59,26 @@ def projectnotification(projectid,action):
 
 @app.route('/pushnotification',methods=['GET','POST'])
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
-def notify(tags,msg):
+def notify():
     headers={}
     data={}
     par=request.get_json(force=True)
     try:
         data['platform']=[1]
-        data['msg']=msg
-        data['tags']=tags
+        data['msg']=par['msg']
+        data['tags']=par['tags']
         data['payload']={"largeIcon":"http://cdn.mysitemyway.com/etc-mysitemyway/icons/legacy-previews/icons/blue-jelly-icons-alphanumeric/069535-blue-jelly-icon-alphanumeric-letter-p.png"}
         headers['x-pushbots-appid']="564e3f56177959ce468b4569"
         headers['x-pushbots-secret']="bafdd9608dab716baabad599cc6c477e"
         headers['Content-Type']="application/json"
-        r=requests.post("https://api.pushbots.com/push/all",headers=headers)
+        r=requests.post("https://api.pushbots.com/push/all",headers=headers,json=data)
         if r.status_code==200:
-            return True
+            return jsonify(success="Successfully sent!"),201
         else:
-            return False
+            return jsonify(error="Something went wrong",response=str(r.content)),500
     except Exception as e:
         print str(e)
-        return False
+        return jsonify(error="Something went wrong",response=str(err)),500
 def check_status(authkey, usertype):
     res= mongo.db.users.find_and_modify({'authkey': authkey,'usertype': usertype},{"$set":{"loggedat":datetime.utcnow()}})
     if res is not None:
@@ -242,10 +242,7 @@ def login_action():
         try:
             if "bypass" in data:
                 authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
-                if (data['usertype']=='S'):
-                    mongo.db.users.create_index("loggedat",expireAfterSeconds=2000)
-                else:
-                    mongo.db.users.create_index("loggedat",expireAfterSeconds=500)
+                mongo.db.users.create_index("loggedat",expireAfterSeconds=2000)
                 mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
                 return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'],user=data['user']),201
             c.get("https://webkiosk.jiit.ac.in")
@@ -285,10 +282,7 @@ def login_action():
             else:
                 c.close()
                 authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
-                if (data['usertype']=='S'):
-                    mongo.db.users.create_index("loggedat",expireAfterSeconds=2000)
-                else:
-                    mongo.db.users.create_index("loggedat",expireAfterSeconds=500)
+                mongo.db.users.create_index("loggedat",expireAfterSeconds=2000)
                 mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
                 return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'],user=data['user']),201
         except (Exception) as error:
