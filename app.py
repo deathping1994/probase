@@ -1,10 +1,8 @@
-import smtplib
 from datetime import datetime
 from flask import jsonify
 import json
 from flask import Flask
 import random
-import urllib2
 from flask import request
 from flask.ext.cors import CORS,cross_origin
 import requests
@@ -14,7 +12,6 @@ from flask.ext.pymongo import PyMongo
 from functools import wraps
 from bs4 import BeautifulSoup
 from bson.objectid import ObjectId
-from bson.json_util import dumps
 app = Flask("projectbase")
 bcrypt = Bcrypt(app)
 mongo = PyMongo(app)
@@ -57,28 +54,41 @@ def projectnotification(projectid,action):
     except Exception as e:
         raise e
 
+
 @app.route('/pushnotification',methods=['GET','POST'])
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
-def notify():
-    headers={}
-    data={}
+def push_notify():
     par=request.get_json(force=True)
     try:
+        if notify(par['msg'],par['tags']):
+            return jsonify(success="Successfully sent!"),201
+        else:
+            return jsonify(error="Something went wrong",response=str(r.content)),500
+    except Exception as e:
+        print str(e)
+        return jsonify(error="Something went wrong",response=str(e)),500
+
+
+def notify(msg,tags):
+    try:
+        headers={}
+        data={}
+        data['tags']=tags
+        data['msg']=msg
         data['platform']=[1]
-        data['msg']=par['msg']
-        data['tags']=par['tags']
         data['payload']={"largeIcon":"http://cdn.mysitemyway.com/etc-mysitemyway/icons/legacy-previews/icons/blue-jelly-icons-alphanumeric/069535-blue-jelly-icon-alphanumeric-letter-p.png"}
         headers['x-pushbots-appid']="564e3f56177959ce468b4569"
         headers['x-pushbots-secret']="bafdd9608dab716baabad599cc6c477e"
         headers['Content-Type']="application/json"
         r=requests.post("https://api.pushbots.com/push/all",headers=headers,json=data)
         if r.status_code==200:
-            return jsonify(success="Successfully sent!"),201
+            return True
         else:
-            return jsonify(error="Something went wrong",response=str(r.content)),500
+            return False
     except Exception as e:
-        print str(e)
-        return jsonify(error="Something went wrong",response=str(err)),500
+        raise e
+
+
 def check_status(authkey, usertype):
     res= mongo.db.users.find_and_modify({'authkey': authkey,'usertype': usertype},{"$set":{"loggedat":datetime.utcnow()}})
     if res is not None:
@@ -162,7 +172,7 @@ def list_projects(user):
                             }
                         }
                     }
-                re=es.search(index="projects",body=query)
+                re=es.search(index="probase_repos",body=query)
                 return jsonify(success="Found projects",projects=re['hits']),200
         else:
             return jsonify(error="No user specified"),500
@@ -327,7 +337,6 @@ def create_group():
             query={'projecttype': data['projecttype'] ,'members':{ "$in": members } }
             group = mongo.db.groups.find_one(query)
             print type(group)
-            # print group.count()
             if group is None and currentuser(data['authkey'],data['usertype']) in members:
                 res=mongo.db.groups.insert({"projecttype":data['projecttype'],"members":data['membersid']})
                 print res
@@ -347,9 +356,9 @@ def create_group():
                     'remarks':"",
                     'languages':""
                     }
-                print es.index(index='probase_repos',id=str(res), doc_type='projects', body=task)
-                message="Your %s Project has been successfully registered.",(res['projecttype'])
-                notify(message,members['members'])
+                indexres= es.index(index='probase_repos',id=str(res), doc_type='projects', body=task)
+                message="Your %s Project has been successfully registered.",(data['projecttype'])
+                notify(message,data['members'])
                 return jsonify(success="Group Successfully registered!"),201
             elif group is None and currentuser(data['authkey'],data['usertype']) not in members:
                 time=datetime.now()
@@ -364,7 +373,10 @@ def create_group():
                 return response
         except Exception as e:
             mongo.db.groups.remove({"_id":ObjectId(str(res))},safe=True)
+            params= {'id': indexres['_id'], 'version': indexres['_version']}
+            es.delete(index="probase_repos",doc_type="projects",params=params)
             log(e)
+            print str(e)
             return jsonify(error="Oops ! Something Went wrong, Try Again"),500
 
 
