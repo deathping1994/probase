@@ -207,9 +207,9 @@ def feedback():
         return jsonify(error="Sorry, we Couldn't find your feedback. May be you missed something !"),403
     else:
         try:
-            data={'to':"gshukla66@gmail.com",
-              'subject':"Probase:BUG|FEEDBACK",
-              'message':"FROM:"+data['from']+"\n"+data['msg'],
+            data={"to":"gshukla66@gmail.com",
+              "subject":"Probase:BUG|FEEDBACK",
+              "message":"FROM:"+data['from']+"\n"+data['msg'],
               "token":"$2b$12$8/Z.2WDlk9VVWVND/DVtgej5z.pxKakZYSfkGdLQCIy7VCXgm8VNm"
               }
             print data
@@ -217,7 +217,7 @@ def feedback():
             return jsonify(success="Your Feedback is Valuable to us and has been duly recorded, Thanks for your time !",error="")
         except Exception as err:
             log(err)
-            return jsonify(error="We are really sorry, something went wrong on our end. " +"/n"
+            return jsonify(error="We are really sorry, something went wrong on our end. " +"\n"
                                  "Event has been reported and will soon be acted upon. Stay Tuned!"),500
 
 @app.route('/',methods=['POST','GET'])
@@ -240,7 +240,7 @@ def login_action():
         c = requests.Session()
         print "c created"
         try:
-            if (data["bypass"]):
+            if "bypass" in data:
                 authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
                 if (data['usertype']=='S'):
                     mongo.db.users.create_index("loggedat",expireAfterSeconds=2000)
