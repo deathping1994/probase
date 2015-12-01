@@ -45,12 +45,34 @@ def login_required(f):
     return decorated_function
 
 
-def projectnotification(projectid,action):
+def project_notification(projectid,action):
     try:
         members=mongo.db.groups.find_one({"_id":ObjectId(group_id)})
         message="Your %s project has been %s.",(members['projecttype'],action)
         notify(message,members['members'])
         return True
+    except Exception as e:
+        raise e
+
+
+def isopen(projectype,action):
+    try:
+        action=action.lower()
+        projectype=projectype.lower()
+        query={'projecttype':projectype,"action":action}
+        print query
+        res=mongo.db.dates.find_one({'projecttype':projectype,"action":action})
+        if res is None:
+            print "none"
+            return False
+        else:
+            date=datetime.now()
+            if date<=res['date'].replace(tzinfo=None):
+                print date
+                return True
+            else:
+                print date,res['date'].replace(tzinfo=None)
+                return False
     except Exception as e:
         raise e
 
@@ -327,67 +349,77 @@ def temp():
 @login_required
 def create_group():
     data=request.get_json(force=True)
-    print data
-    res=""
-    if data['title'] == "" or len(data['membersid'])==0 or len(data['mentor'])==0:
-        return jsonify(error="Incomplete Details provided"),500
-    else:
-        try:
-            members=data['membersid']
-            query={'projecttype': data['projecttype'] ,'members':{ "$in": members } }
-            group = mongo.db.groups.find_one(query)
-            print type(group)
-            if group is None and currentuser(data['authkey'],data['usertype']) in members:
-                res=mongo.db.groups.insert({"projecttype":data['projecttype'],"members":data['membersid']})
-                print res
-                task = {
-                    'title': data['title'],
-                    'description': data['description'],
-                    'members': data['members'],
-                    'projecttype': data['projecttype'],
-                    'approved': False,
-                    'evaluated': False,
-                    'mentor': data['mentor'],
-                    'synopsis':"",
-                    'additional_link':"",
-                    'source_code':"",
-                    'project_report': "",
-                    'rating':"",
-                    'remarks':"",
-                    'languages':""
-                    }
-                indexres= es.index(index='probase_repos',id=str(res), doc_type='projects', body=task)
-                message="Your %s Project has been successfully registered.",(data['projecttype'])
-                notify(message,data['members'])
-                return jsonify(success="Group Successfully registered!"),201
-            elif group is None and currentuser(data['authkey'],data['usertype']) not in members:
-                time=datetime.now()
-                err={"error":"You are not authorised to register this group, this event will be reported !","user": members,"time":time}
-                log(err)
-                response= jsonify(error="You are not authorised to register this group, this event will be reported !")
-                response.status_code=403
-                return response
-            else:
-                response= jsonify(error="Group Already registered, Use update project option to make changes to your existing project. ")
-                response.status_code=500
-                return response
-        except Exception as e:
+    try:
+        created =False
+        if not isopen(data['projecttype'],"registration"):
+            return jsonify(error="Registration Date all ready Passed."),403
+        members=data['membersid']
+        """ No group registers more than one project in a semester
+        """
+        query={'members':{ "$in": members },'semester':data['semester']}
+        group = mongo.db.groups.find_one(query)
+        print type(group)
+        curruser=currentuser(data['authkey'],data['usertype'])
+        if group is None and curruser in members:
+            day=datetime.now()
+            res=mongo.db.groups.insert({"projecttype":data['projecttype'].lower(),"members":data['membersid'],
+                                        'semester':data['semester'],'evaluated':False,
+                                        'approved':False,"registeredBy":curruser,"registeredOn":str(day) })
+            print res
+            created=True
+            task = {
+                'title': data['title'],
+                'description': data['description'],
+                'members': data['members'],
+                'projecttype': data['projecttype'],
+                'approved': False,
+                'evaluated': False,
+                'mentor': data['mentor'],
+                'synopsis':"",
+                'additional_links':"",
+                'source_code':"",
+                'project_report': "",
+                'rating':"",
+                'remarks':"",
+                'lang':""
+            }
+            indexres= es.index(index='probase_repos',id=str(res), doc_type='projects', body=task)
+            message="Your %s Project has been successfully registered.",(data['projecttype'])
+            notify(message,data['members'])
+            return jsonify(success="Group Successfully registered!"),201
+        elif group is None and curruser not in members:
+            err={"error":"You are not authorised to register this group, this event will be reported !","user": curruser,"time":time}
+            log(err)
+            return jsonify(error="You are not authorised to register this group, this event will be reported !"),403
+        else:
+            return jsonify(error="Group already registered, use update option to make changes"),500
+    except KeyError as keyerr:
+        if created:
             mongo.db.groups.remove({"_id":ObjectId(str(res))},safe=True)
             params= {'id': indexres['_id'], 'version': indexres['_version']}
             es.delete(index="probase_repos",doc_type="projects",params=params)
-            log(e)
-            print str(e)
-            return jsonify(error="Oops ! Something Went wrong, Try Again"),500
+        log(keyerr)
+        print str(keyerr)
+        return jsonify(error=str(keyerr)+ " missing in payload."),500
+    except Exception as e:
+        if created:
+            mongo.db.groups.remove({"_id":ObjectId(str(res))},safe=True)
+            params= {'id': indexres['_id'], 'version': indexres['_version']}
+            es.delete(index="probase_repos",doc_type="projects",params=params)
+        log(e)
+        print str(e)
+        return jsonify(error="Oops ! Something Went wrong, Try Again"),500
 
 
 @app.route('/v1/projects/<project_id>',methods=['POST','GET'])
 def display_project(project_id):
-    re=es.search(index="projects",id=project_id)
+    re=es.search(index="probase_repos",id=project_id)
     return jsonify(re), 200
+
 
 @app.route('/v1/projects/update/<group_id>',methods=['POST','GET'])
 @login_required
-# @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
+@cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
 def update_project(group_id):
     print group_id
     data=request.get_json(force=True)
@@ -395,10 +427,19 @@ def update_project(group_id):
     members=mongo.db.groups.find_one({"_id":ObjectId(group_id)})
     print type(members)
     try:
-        if currentuser(data['authkey'],data['usertype']) in members['members']:
+        if not currentuser(data['authkey'],data['usertype']) in members['members']:
+            return jsonify(error="You are not a part of this Group!"),403
+        elif members['evaluated']==True:
+            return jsonify("Project already evaluated! Changes have been discarded"),500
+        elif not isopen(members['projecttype']):
+            return jsonify("Project submission date already passed."),403
+        else:
             qbody={"doc":{}}
-            if 'description' in data:
-                qbody['doc']['description']=data['description']
+            if members['approved'] is not True:
+                if 'description' in data:
+                    qbody['doc']['description']=data['description']
+                if 'title' in data:
+                    qbody['doc']['title']=data['title']
             if 'additional_links' in data:
                 qbody['doc']['additional_links']=data['additional_links']
             if 'synopsis' in data:
@@ -407,13 +448,13 @@ def update_project(group_id):
                 qbody['doc']['project_report']=data['project_report']
             if 'source_code' in data:
                 qbody['doc']['source_code']=data['source_code']
+            if 'lang' in data:
+                qbody['doc']['lang']=data['lang']
             body=json.dumps(qbody)
-            re=es.update(index="projects",doc_type="projects",id=group_id,body=body)
+            re=es.update(index="probase_repos",doc_type="projects",id=group_id,body=body)
             message="Your "+members['projecttype']+" Project has been successfully Updated"
             notify(members['members'],message)
             return jsonify(success="Changes successfully Saved!"), 201
-        else:
-            return jsonify(error="Either You are not part of this group or your project has already been evaluated"),500
     except Exception as e:
         log(e)
         return jsonify(error="Oops something went wrong ! Try again After sometime."),500
@@ -468,7 +509,7 @@ def search_project():
         query=request.args.get("query","")
         size=request.args.get("size","10")
         page=request.args.get("from","0")
-        source=request.args.get("source","projects")
+        source=request.args.get("source","probase_repos")
         type=request.args.get("type","")
         fields= [ "title^1.8", "description^1.2","projecttype^1","evaluated","approved","mentor","synopsis^1.1","languages^1.01"]
         if type=="similar":
@@ -492,6 +533,13 @@ def search_project():
         log(e)
         print e
         return jsonify(error=str(e)),500
+
+@app.route('/populate', methods=['GET','POST'])
+@cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
+def dummy():
+    import sampledata
+    sampledata.create_sample()
+    return jsonify(success="Dummy data created"),201
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0",debug=True)
