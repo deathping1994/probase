@@ -98,7 +98,8 @@ def notify(msg,tags):
         data['tags']=tags
         data['msg']=msg
         data['platform']=[1]
-        data['payload']={"largeIcon":"http://cdn.mysitemyway.com/etc-mysitemyway/icons/legacy-previews/icons/blue-jelly-icons-alphanumeric/069535-blue-jelly-icon-alphanumeric-letter-p.png"}
+        data['payload']={"BigTextStyle": "true",
+                         "bigText":msg,"largeIcon":"http://cdn.mysitemyway.com/etc-mysitemyway/icons/legacy-previews/icons/blue-jelly-icons-alphanumeric/069535-blue-jelly-icon-alphanumeric-letter-p.png"}
         headers['x-pushbots-appid']="564e3f56177959ce468b4569"
         headers['x-pushbots-secret']="bafdd9608dab716baabad599cc6c477e"
         headers['Content-Type']="application/json"
@@ -125,6 +126,13 @@ def currentuser(authkey,usertype):
         return curruser['user']
     else:
         return "NULL"
+
+@app.route('/tags',methods=['GET','POST'])
+@cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
+def tagslist():
+    tags=["GDG","PROGHUB","JYP","OSDC","TNP"]
+    return jsonify(tags=tags),200
+
 
 
 @app.route('/students/<batch>/list',methods=['GET','POST'])
@@ -419,19 +427,18 @@ def display_project(project_id):
 
 @app.route('/v1/projects/update/<group_id>',methods=['POST','GET'])
 @login_required
-@cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
 def update_project(group_id):
-    print group_id
     data=request.get_json(force=True)
+    group_id=str(group_id)
     print data
     members=mongo.db.groups.find_one({"_id":ObjectId(group_id)})
-    print type(members)
+    print members
     try:
         if not currentuser(data['authkey'],data['usertype']) in members['members']:
             return jsonify(error="You are not a part of this Group!"),403
         elif members['evaluated']==True:
             return jsonify("Project already evaluated! Changes have been discarded"),500
-        elif not isopen(members['projecttype']):
+        elif not isopen(members['projecttype'],"submission"):
             return jsonify("Project submission date already passed."),403
         else:
             qbody={"doc":{}}
@@ -453,10 +460,11 @@ def update_project(group_id):
             body=json.dumps(qbody)
             re=es.update(index="probase_repos",doc_type="projects",id=group_id,body=body)
             message="Your "+members['projecttype']+" Project has been successfully Updated"
-            notify(members['members'],message)
+            notify(message,members['members'])
             return jsonify(success="Changes successfully Saved!"), 201
     except Exception as e:
         log(e)
+        print str(e)
         return jsonify(error="Oops something went wrong ! Try again After sometime."),500
 
 
