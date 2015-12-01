@@ -537,9 +537,11 @@ def search_project():
 @app.route('/populate', methods=['GET','POST'])
 @cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
 def dummy():
-    import sampledata
-    sampledata.create_sample()
-    return jsonify(success="Dummy data created"),201
-
+    try:
+        import sampledata
+        sampledata.create_sample()
+        return jsonify(success="Dummy data created"),201
+    except Exception as e:
+        return jsonify(error=str(e)),500
 if __name__ == '__main__':
     app.run(host="0.0.0.0",debug=True)
