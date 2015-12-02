@@ -130,7 +130,7 @@ def currentuser(authkey,usertype):
 @app.route('/tags',methods=['GET','POST'])
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
 def tagslist():
-    tags=["GDG","PROGHUB","JYP","OSDC","TNP"]
+    tags=[{"tag":"GDG"},{"tag":"PROGHUB"},{"tag":"JYP"},{"tag":"OSDC"},{"tag":"TNP"}]
     return jsonify(tags=tags),200
 
 
@@ -213,6 +213,7 @@ def list_projects(user):
 
 @app.route('/mentor/projects/<mentor>',methods=['GET','POST'])
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
+@adminlogin_required
 def list_mentor_projects(mentor):
     try:
         if len(mentor)!=0:
@@ -283,7 +284,7 @@ def login_action():
             if "bypass" in data:
                 authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
                 mongo.db.users.create_index("loggedat",expireAfterSeconds=2000)
-                mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
+                mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"mentorcode":data['mentorcode'],"loggedat":datetime.utcnow()}},upsert=True)
                 return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'],user=data['user']),201
             c.get("https://webkiosk.jiit.ac.in")
             if data['usertype']=='S':
