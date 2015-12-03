@@ -451,6 +451,7 @@ def create_group():
             notify(message,data['members'])
             return jsonify(success="Group Successfully registered!"),201
         elif group is None and curruser not in members:
+            time=datetime.now()
             err={"error":"You are not authorised to register this group, this event will be reported !","user": curruser,"time":time}
             log(err)
             return jsonify(error="You are not authorised to register this group, this event will be reported !"),403
