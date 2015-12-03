@@ -48,7 +48,7 @@ def create_sample():
             members.append(member.copy())
             membersid.append(str(data)[:-2])
             data=sheet.cell_value(row,5)
-            mentor.append(data)
+            mentor.append(data.lower())
             jsonobj['members']=members
             jsonobj['mentor']=mentor
             print jsonobj

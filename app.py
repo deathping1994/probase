@@ -1,4 +1,5 @@
 from datetime import datetime
+import elasticsearch
 from flask import jsonify
 import json
 from flask import Flask
@@ -6,7 +7,7 @@ import random
 from flask import request
 from flask.ext.cors import CORS,cross_origin
 import requests
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch,helpers
 from flask.ext.bcrypt import Bcrypt
 from flask.ext.pymongo import PyMongo
 from functools import wraps
@@ -47,7 +48,7 @@ def login_required(f):
 
 def project_notification(projectid,action):
     try:
-        members=mongo.db.groups.find_one({"_id":ObjectId(group_id)})
+        members=mongo.db.groups.find_one({"_id":ObjectId(projectid)})
         message="Your %s project has been %s.",(members['projecttype'],action)
         notify(message,members['members'])
         return True
@@ -126,6 +127,25 @@ def currentuser(authkey,usertype):
         return curruser['user']
     else:
         return "NULL"
+
+
+@app.route('/typeahead',methods=['GET','POST'])
+@cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
+def typeahead():
+    try:
+        q=request.args.get("q","")
+        qbody={"fields":["title"],
+                "query": {
+                    "match": {
+                        "title": q
+                    }
+                }
+            }
+        re=es.search(index="probase_repos",body=qbody)
+        return jsonify(projects=re['hits']['hits']),200
+    except Exception as e:
+        return jsonify(error=str(e)),500
+
 
 @app.route('/tags',methods=['GET','POST'])
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
@@ -215,9 +235,11 @@ def list_projects(user):
 @cross_origin(origin='*', headers=['Content- Type', 'Authorization'])
 @adminlogin_required
 def list_mentor_projects(mentor):
+    curruser=mongo.db.users.find_one({"user":str(mentor)})
     try:
         if len(mentor)!=0:
-            mentorarr=[mentor]
+            mentorarr=[curruser['mentorcode']]
+            print mentorarr
             query={
                     "query" : {
                         "filtered" : {
@@ -230,7 +252,8 @@ def list_mentor_projects(mentor):
                     }
                 }
             print "gugu"
-            re=es.search(index="projects",body=query)
+            re=es.search(index="probase_repos",body=query)
+            print re
             return jsonify(success="Found projects",projects=re['hits']),200
         else:
             return jsonify(error="No user specified"),500
@@ -324,7 +347,7 @@ def login_action():
                 c.close()
                 authkey=bcrypt.generate_password_hash(data['user']+data['pass'])
                 mongo.db.users.create_index("loggedat",expireAfterSeconds=2000)
-                mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
+                mongo.db.users.update({"user" : data['user']}, {"$set" : {"authkey":authkey,"mentorcode":data['mentorcode'],"usertype":data['usertype'],"loggedat":datetime.utcnow()}},upsert=True)
                 return jsonify(error="",success="Succcessfully Logged in!",authkey=authkey,usertype=data['usertype'],user=data['user']),201
         except (Exception) as error:
             print str(error)
@@ -373,7 +396,7 @@ def create_group():
             day=datetime.now()
             res=mongo.db.groups.insert({"projecttype":data['projecttype'].lower(),"members":data['membersid'],
                                         'semester':data['semester'],'evaluated':False,
-                                        'approved':False,"registeredBy":curruser,"registeredOn":str(day) })
+                                        'approved':False,"registeredBy":curruser,"registeredOn":str(day)})
             print res
             created=True
             task = {
@@ -479,7 +502,7 @@ def ae_project(projectid,action):
             "doc" : {
                 "approved" : True
                         }}
-            es.update(index="projects",doc_type='projects',id=projectid,body=body)
+            es.update(index="probase_repos",doc_type='projects',id=projectid,body=body)
             project_notification(projectid,action)
             return jsonify(success="Changes have been saved."),201
         elif action=="evaluate":
@@ -490,17 +513,18 @@ def ae_project(projectid,action):
                 'remarks':data['remarks']
                         }
                 }
-            es.update(index="projects",doc_type='projects',id=projectid,body=body)
+            es.update(index="probase_repos",doc_type='projects',id=projectid,body=body)
             project_notification(projectid,action)
             return jsonify(success="Changes have been saved"), 201
         elif action=="disapprove":
             body={
                 "doc" : {
-                "approved" : False,
-                'remarks':data['remarks']
+                "approved" : False
                         }
                 }
-            es.update(index="projects",doc_type='projects',id=projectid,body=body)
+            if 'remarks' in data:
+                body['remarks']=data['remarks']
+            es.update(index="probase_repos",doc_type='projects',id=projectid,body=body)
             project_notification(projectid,action)
             return jsonify(success="Changes have been saved"), 201
 
@@ -508,6 +532,7 @@ def ae_project(projectid,action):
             return jsonify(error="Invalid Project ID or action specified")
     except Exception as e:
         log(e)
+        print str(e)
         return jsonify(error="Something Seems Fishy, Probably the network here sucks."),500
 
 
@@ -520,7 +545,7 @@ def search_project():
         page=request.args.get("from","0")
         source=request.args.get("source","probase_repos")
         type=request.args.get("type","")
-        fields= [ "title^1.8", "description^1.2","projecttype^1","evaluated","approved","mentor","synopsis^1.1","languages^1.01"]
+        fields= [ "title^2.8", "description","projecttype","evaluated","approved","mentor","synopsis^1.1","languages^1.11"]
         if type=="similar":
             fields=[ "title^1.8", "description^1.1","projecttype^1","languages^1.01"]
         elif source=="github_repos":
@@ -542,6 +567,24 @@ def search_project():
         log(e)
         print e
         return jsonify(error=str(e)),500
+
+@app.route('/reindex', methods=['GET','POST'])
+@cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
+def reindex_github():
+    try:
+        body= {}
+        es2 = Elasticsearch([{'host': 'anip.xyz', 'port': 9200}])
+        # res = helpers.scan(es, query={
+        #                           "query": {
+        #                             "match_all": {}
+        #
+        #                           },
+        #                           "size":10000
+        #                         },index="old_index")
+        elasticsearch.helpers.reindex(es2,source_index="github_repos",chunk_size=10000,target_index="github")
+    except Exception as e:
+        return jsonify(error=str(e)),500
+
 
 @app.route('/populate', methods=['GET','POST'])
 @cross_origin(origin='0.0.0.0',headers=['Content- Type','Authorization'])
