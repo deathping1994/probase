@@ -9,6 +9,7 @@ import time
 from app import app,mongo
 from pymongo import MongoClient
 mongo = MongoClient()
+db=mongo.projectbase
 es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
 mentor=[
         "sanjeevsharma",
@@ -286,7 +287,6 @@ def probase():
             doc['projecttype']=random.choice(["major","minor"])
             doc['approved']=random.choice([True,False])
             doc['evaluated']=random.choice([True,False])
-            doc['synopsis']="http://random.org"
             doc['remarks']=random.choice(["Good work","Excellent","Bad","Could have been better"])
             doc['rating']=decimal.Decimal(random.randrange(1000))/100
             memberlist=[]
@@ -306,13 +306,22 @@ def probase():
             for key in langs:
                 langused.append(key)
             doc['lang']=langused
+            if doc['description'] is not None:
+                doc['synopsis-text']="http://random.org"+doc['description']
+                doc['synopsis']="## This is markdown" +"\n" + doc['description']
+            else:
+                doc['synopsis-text']="http://random.org"
+                doc['synopsis']="## This is markdown but no synopsis"
             members=[]
             day=datetime.datetime.now()
-            res=mongo.db.groups.insert({"projecttype":doc['projecttype'],
+            try:
+                res=db.groups.insert({"projecttype":doc['projecttype'],
                                         "members":membersid,"semester":random.choice(['4','5','6','7','8']),
                                         'evaluated':doc['evaluated'],
                                             'approved':doc['approved'],"registeredBy":"DUMMY","registeredOn":str(day)})
-            es.index(index='probase_repos',id=str(res), doc_type='projects', body=doc)
+                es.index(index='probase_repos',id=str(res), doc_type='projects', body=doc)
+            except Exception as e:
+                pass
         last=repos[-1]
         curid=int(last['id'])
         print curid

@@ -1,5 +1,6 @@
 from datetime import datetime
 import elasticsearch
+import pika
 from flask import jsonify
 import json
 from flask import Flask
@@ -11,7 +12,6 @@ from elasticsearch import Elasticsearch,helpers
 from flask.ext.bcrypt import Bcrypt
 from flask.ext.pymongo import PyMongo
 from functools import wraps
-from bs4 import BeautifulSoup
 from bson.objectid import ObjectId
 app = Flask("projectbase")
 bcrypt = Bcrypt(app)
@@ -20,9 +20,36 @@ cors = CORS(app, resources={r"*": {"origins": "*"}})
 app.config['CORS_HEADERS'] = 'Content-Type'
 es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
 
+
+def sendsms(msg,tags):
+    try:
+        connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+        channel = connection.channel()
+        res=mongo.db.subscribers.find({"tags": {"$in":tags}})
+        print res
+        if res is None:
+            return True
+        else:
+            subscribers=[]
+            for subscriber in res:
+                print subscriber['phone']
+                subscribers.append(subscriber['phone'])
+            mq={"msg":msg,"subscribers":subscribers}
+            print mq,str(mq)
+            channel.queue_declare(queue='probasemsg')
+            channel.basic_publish(exchange='',
+                                  routing_key='probasemsg',
+                                  body=str(mq))
+            connection.close()
+            return True
+    except Exception as e:
+        raise e
+
+
 def log(e):
     mongo.db.logs.insert({"error":str(e)})
     return True
+
 
 def adminlogin_required(f):
     @wraps(f)
@@ -94,6 +121,7 @@ def push_notify():
 
 def notify(msg,tags):
     try:
+        sendsms(msg,tags)
         headers={}
         data={}
         data['tags']=tags
@@ -105,7 +133,9 @@ def notify(msg,tags):
         headers['x-pushbots-secret']="bafdd9608dab716baabad599cc6c477e"
         headers['Content-Type']="application/json"
         r=requests.post("https://api.pushbots.com/push/all",headers=headers,json=data)
+        print "here"
         if r.status_code==200:
+            print "success"
             return True
         else:
             return False
@@ -142,6 +172,7 @@ def typeahead():
                 }
             }
         re=es.search(index="probase_repos",body=qbody)
+        print re
         return jsonify(projects=re['hits']['hits']),200
     except Exception as e:
         return jsonify(error=str(e)),500
@@ -436,8 +467,8 @@ def create_group():
     except Exception as e:
         if created:
             mongo.db.groups.remove({"_id":ObjectId(str(res))},safe=True)
-            params= {'id': indexres['_id'], 'version': indexres['_version']}
-            es.delete(index="probase_repos",doc_type="projects",params=params)
+            params= { 'version': indexres['_version']}
+            es.delete(index="probase_repos",id= indexres['_id'],doc_type="projects",params=params)
         log(e)
         print str(e)
         return jsonify(error="Oops ! Something Went wrong, Try Again"),500
@@ -456,19 +487,22 @@ def update_project(group_id):
     group_id=str(group_id)
     print data
     members=mongo.db.groups.find_one({"_id":ObjectId(group_id)})
-    print members
+    print members['members']
     try:
+        print "inside try"
         if not currentuser(data['authkey'],data['usertype']) in members['members']:
             return jsonify(error="You are not a part of this Group!"),403
         elif members['evaluated']==True:
-            return jsonify("Project already evaluated! Changes have been discarded"),500
+            return jsonify(error="Project already evaluated! Changes have been discarded"),500
         elif not isopen(members['projecttype'],"submission"):
-            return jsonify("Project submission date already passed."),403
+            return jsonify(error="Project submission date already passed."),403
         else:
+            print "inside else"
             qbody={"doc":{}}
             if members['approved'] is not True:
                 if 'description' in data:
                     qbody['doc']['description']=data['description']
+                    print qbody['doc']['description']
                 if 'title' in data:
                     qbody['doc']['title']=data['title']
             if 'additional_links' in data:
@@ -481,7 +515,9 @@ def update_project(group_id):
                 qbody['doc']['source_code']=data['source_code']
             if 'lang' in data:
                 qbody['doc']['lang']=data['lang']
+            print qbody
             body=json.dumps(qbody)
+            print "body"
             re=es.update(index="probase_repos",doc_type="projects",id=group_id,body=body)
             message="Your "+members['projecttype']+" Project has been successfully Updated"
             notify(message,members['members'])
@@ -496,6 +532,8 @@ def update_project(group_id):
 @adminlogin_required
 def ae_project(projectid,action):
     try:
+        projectid=str(projectid)
+        action=str(action)
         data=request.get_json(force=True)
         if action== "approve":
             body={
