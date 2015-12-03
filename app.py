@@ -7,6 +7,7 @@ from flask import Flask
 import random
 from flask import request
 from flask.ext.cors import CORS,cross_origin
+from bs4 import BeautifulSoup
 import requests
 from elasticsearch import Elasticsearch,helpers
 from flask.ext.bcrypt import Bcrypt
@@ -329,6 +330,8 @@ def login_action():
     if not (("user" in data) and ('pass' in data) and ('usertype' in data)):
         return jsonify(error="Key error, please provide all fields"),500
     else:
+        if "mentorcode" not in data:
+            data['mentorcode']="mahendragurve"
         if data['usertype']=="S":
             if not('date1' in data):
                 return jsonify(error="Key error , provide date1 field"),500
@@ -586,6 +589,7 @@ def search_project():
         type=request.args.get("type","")
         fields= [ "title^2.8", "description","projecttype","evaluated","approved","mentor","synopsis^1.1","languages^1.11"]
         if type=="similar":
+            source="_all"
             fields=[ "title^1.8", "description^1.1","projecttype^1","languages^1.01"]
         elif source=="github_repos":
             fields=[ "title^1.8", "description^1.1","languages^1.01"]
