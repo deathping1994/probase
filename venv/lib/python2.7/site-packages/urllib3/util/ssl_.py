@@ -1,12 +1,18 @@
+from __future__ import absolute_import
+import errno
+import warnings
+import hmac
+
 from binascii import hexlify, unhexlify
 from hashlib import md5, sha1, sha256
 
-from ..exceptions import SSLError, InsecurePlatformWarning
+from ..exceptions import SSLError, InsecurePlatformWarning, SNIMissingWarning
 
 
 SSLContext = None
 HAS_SNI = False
 create_default_context = None
+IS_PYOPENSSL = False
 
 # Maps the length of a digest to a possible hash function producing this digest
 HASHFUNC_MAP = {
@@ -15,8 +21,23 @@ HASHFUNC_MAP = {
     64: sha256,
 }
 
-import errno
-import warnings
+
+def _const_compare_digest_backport(a, b):
+    """
+    Compare two digests of equal length in constant time.
+
+    The digests must be of type str/bytes.
+    Returns True if the digests match, and False otherwise.
+    """
+    result = abs(len(a) - len(b))
+    for l, r in zip(bytearray(a), bytearray(b)):
+        result |= l ^ r
+    return result == 0
+
+
+_const_compare_digest = getattr(hmac, 'compare_digest',
+                                _const_compare_digest_backport)
+
 
 try:  # Test for SSL features
     import ssl
@@ -90,11 +111,12 @@ except ImportError:
                 )
             self.ciphers = cipher_suite
 
-        def wrap_socket(self, socket, server_hostname=None):
+        def wrap_socket(self, socket, server_hostname=None, server_side=False):
             warnings.warn(
                 'A true SSLContext object is not available. This prevents '
                 'urllib3 from configuring SSL appropriately and may cause '
-                'certain SSL connections to fail. For more information, see '
+                'certain SSL connections to fail. You can upgrade to a newer '
+                'version of Python to solve this. For more information, see '
                 'https://urllib3.readthedocs.org/en/latest/security.html'
                 '#insecureplatformwarning.',
                 InsecurePlatformWarning
@@ -105,6 +127,7 @@ except ImportError:
                 'ca_certs': self.ca_certs,
                 'cert_reqs': self.verify_mode,
                 'ssl_version': self.protocol,
+                'server_side': server_side,
             }
             if self.supports_set_ciphers:  # Platform-specific: Python 2.7+
                 return wrap_socket(socket, ciphers=self.ciphers, **kwargs)
@@ -134,7 +157,7 @@ def assert_fingerprint(cert, fingerprint):
 
     cert_digest = hashfunc(cert).digest()
 
-    if cert_digest != fingerprint_bytes:
+    if not _const_compare_digest(cert_digest, fingerprint_bytes):
         raise SSLError('Fingerprints did not match. Expected "{0}", got "{1}".'
                        .format(fingerprint, hexlify(cert_digest)))
 
@@ -283,4 +306,15 @@ def ssl_wrap_socket(sock, keyfile=None, certfile=None, cert_reqs=None,
         context.load_cert_chain(certfile, keyfile)
     if HAS_SNI:  # Platform-specific: OpenSSL with enabled SNI
         return context.wrap_socket(sock, server_hostname=server_hostname)
+
+    warnings.warn(
+        'An HTTPS request has been made, but the SNI (Subject Name '
+        'Indication) extension to TLS is not available on this platform. '
+        'This may cause the server to present an incorrect TLS '
+        'certificate, which can cause validation failures. You can upgrade to '
+        'a newer version of Python to solve this. For more information, see '
+        'https://urllib3.readthedocs.org/en/latest/security.html'
+        '#snimissingwarning.',
+        SNIMissingWarning
+    )
     return context.wrap_socket(sock)

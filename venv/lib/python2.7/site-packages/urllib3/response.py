@@ -1,7 +1,9 @@
+from __future__ import absolute_import
 from contextlib import contextmanager
 import zlib
 import io
 from socket import timeout as SocketTimeout
+from socket import error as SocketError
 
 from ._collections import HTTPHeaderDict
 from .exceptions import (
@@ -130,8 +132,8 @@ class HTTPResponse(io.IOBase):
         if "chunked" in encodings:
             self.chunked = True
 
-        # We certainly don't want to preload content when the response is chunked.
-        if not self.chunked and preload_content and not self._body:
+        # If requested, preload the body.
+        if preload_content and not self._body:
             self._body = self.read(decode_content=decode_content)
 
     def get_redirect_location(self):
@@ -194,11 +196,21 @@ class HTTPResponse(io.IOBase):
                 "Received response with content-encoding: %s, but "
                 "failed to decode it." % content_encoding, e)
 
-        if flush_decoder and decode_content and self._decoder:
-            buf = self._decoder.decompress(binary_type())
-            data += buf + self._decoder.flush()
+        if flush_decoder and decode_content:
+            data += self._flush_decoder()
 
         return data
+
+    def _flush_decoder(self):
+        """
+        Flushes the decoder. Should only be called if the decoder is actually
+        being used.
+        """
+        if self._decoder:
+            buf = self._decoder.decompress(b'')
+            return buf + self._decoder.flush()
+
+        return b''
 
     @contextmanager
     def _error_catcher(self):
@@ -209,6 +221,8 @@ class HTTPResponse(io.IOBase):
 
         On exit, release the connection back to the pool.
         """
+        clean_exit = False
+
         try:
             try:
                 yield
@@ -227,17 +241,31 @@ class HTTPResponse(io.IOBase):
 
                 raise ReadTimeoutError(self._pool, None, 'Read timed out.')
 
-            except HTTPException as e:
+            except (HTTPException, SocketError) as e:
                 # This includes IncompleteRead.
                 raise ProtocolError('Connection broken: %r' % e, e)
-        except Exception:
-            # The response may not be closed but we're not going to use it anymore
-            # so close it now to ensure that the connection is released back to the pool.
-            if self._original_response and not self._original_response.isclosed():
-                self._original_response.close()
 
-            raise
+            # If no exception is thrown, we should avoid cleaning up
+            # unnecessarily.
+            clean_exit = True
         finally:
+            # If we didn't terminate cleanly, we need to throw away our
+            # connection.
+            if not clean_exit:
+                # The response may not be closed but we're not going to use it
+                # anymore so close it now to ensure that the connection is
+                # released back to the pool.
+                if self._original_response:
+                    self._original_response.close()
+
+                # Closing the response may not actually be sufficient to close
+                # everything, so if we have a hold of the connection close that
+                # too.
+                if self._connection:
+                    self._connection.close()
+
+            # If we hold the original response but it's closed now, we should
+            # return the connection back to the pool.
             if self._original_response and self._original_response.isclosed():
                 self.release_conn()
 
@@ -301,7 +329,6 @@ class HTTPResponse(io.IOBase):
 
         return data
 
-
     def stream(self, amt=2**16, decode_content=None):
         """
         A generator wrapper for the read() method. A call will block until
@@ -340,9 +367,9 @@ class HTTPResponse(io.IOBase):
         headers = r.msg
 
         if not isinstance(headers, HTTPHeaderDict):
-            if PY3: # Python 3
+            if PY3:  # Python 3
                 headers = HTTPHeaderDict(headers.items())
-            else: # Python 2
+            else:  # Python 2
                 headers = HTTPHeaderDict.from_httplib(headers)
 
         # HTTPResponse objects in Python 3 don't have a .strict attribute
@@ -368,6 +395,9 @@ class HTTPResponse(io.IOBase):
     def close(self):
         if not self.closed:
             self._fp.close()
+
+        if self._connection:
+            self._connection.close()
 
     @property
     def closed(self):
@@ -454,7 +484,8 @@ class HTTPResponse(io.IOBase):
         self._init_decoder()
         # FIXME: Rewrite this method and make it a class with a better structured logic.
         if not self.chunked:
-            raise ResponseNotChunked("Response is not chunked. "
+            raise ResponseNotChunked(
+                "Response is not chunked. "
                 "Header 'transfer-encoding: chunked' is missing.")
 
         # Don't bother reading the body of a HEAD request.
@@ -468,8 +499,18 @@ class HTTPResponse(io.IOBase):
                 if self.chunk_left == 0:
                     break
                 chunk = self._handle_chunk(amt)
-                yield self._decode(chunk, decode_content=decode_content,
-                                   flush_decoder=True)
+                decoded = self._decode(chunk, decode_content=decode_content,
+                                       flush_decoder=False)
+                if decoded:
+                    yield decoded
+
+            if decode_content:
+                # On CPython and PyPy, we should never need to flush the
+                # decoder. However, on Jython we *might* need to, so
+                # lets defensively do it anyway.
+                decoded = self._flush_decoder()
+                if decoded:  # Platform-specific: Jython.
+                    yield decoded
 
             # Chunk content ends with \r\n: discard it.
             while True:

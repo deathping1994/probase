@@ -1,4 +1,7 @@
+from __future__ import absolute_import
 import datetime
+import logging
+import os
 import sys
 import socket
 from socket import error as SocketError, timeout as SocketTimeout
@@ -6,18 +9,13 @@ import warnings
 from .packages import six
 
 try:  # Python 3
-    from http.client import HTTPConnection as _HTTPConnection, HTTPException
+    from http.client import HTTPConnection as _HTTPConnection
+    from http.client import HTTPException  # noqa: unused in this module
 except ImportError:
-    from httplib import HTTPConnection as _HTTPConnection, HTTPException
-
-
-class DummyConnection(object):
-    "Used to detect a failed ConnectionCls import."
-    pass
-
+    from httplib import HTTPConnection as _HTTPConnection
+    from httplib import HTTPException  # noqa: unused in this module
 
 try:  # Compiled with SSL?
-    HTTPSConnection = DummyConnection
     import ssl
     BaseSSLError = ssl.SSLError
 except (ImportError, AttributeError):  # Platform-specific: No SSL.
@@ -41,7 +39,7 @@ from .exceptions import (
     SubjectAltNameWarning,
     SystemTimeWarning,
 )
-from .packages.ssl_match_hostname import match_hostname
+from .packages.ssl_match_hostname import match_hostname, CertificateError
 
 from .util.ssl_ import (
     resolve_cert_reqs,
@@ -53,12 +51,21 @@ from .util.ssl_ import (
 
 from .util import connection
 
+from ._collections import HTTPHeaderDict
+
+log = logging.getLogger(__name__)
+
 port_by_scheme = {
     'http': 80,
     'https': 443,
 }
 
 RECENT_DATE = datetime.date(2014, 1, 1)
+
+
+class DummyConnection(object):
+    """Used to detect a failed ConnectionCls import."""
+    pass
 
 
 class HTTPConnection(_HTTPConnection, object):
@@ -160,6 +167,38 @@ class HTTPConnection(_HTTPConnection, object):
         conn = self._new_conn()
         self._prepare_conn(conn)
 
+    def request_chunked(self, method, url, body=None, headers=None):
+        """
+        Alternative to the common request method, which sends the
+        body with chunked encoding and not as one block
+        """
+        headers = HTTPHeaderDict(headers if headers is not None else {})
+        skip_accept_encoding = 'accept-encoding' in headers
+        self.putrequest(method, url, skip_accept_encoding=skip_accept_encoding)
+        for header, value in headers.items():
+            self.putheader(header, value)
+        if 'transfer-encoding' not in headers:
+            self.putheader('Transfer-Encoding', 'chunked')
+        self.endheaders()
+
+        if body is not None:
+            stringish_types = six.string_types + (six.binary_type,)
+            if isinstance(body, stringish_types):
+                body = (body,)
+            for chunk in body:
+                if not chunk:
+                    continue
+                if not isinstance(chunk, six.binary_type):
+                    chunk = chunk.encode('utf8')
+                len_str = hex(len(chunk))[2:]
+                self.send(len_str.encode('utf-8'))
+                self.send(b'\r\n')
+                self.send(chunk)
+                self.send(b'\r\n')
+
+        # After the if clause, to always have a closed body
+        self.send(b'0\r\n\r\n')
+
 
 class HTTPSConnection(HTTPConnection):
     default_port = port_by_scheme['https']
@@ -205,10 +244,10 @@ class VerifiedHTTPSConnection(HTTPSConnection):
         self.key_file = key_file
         self.cert_file = cert_file
         self.cert_reqs = cert_reqs
-        self.ca_certs = ca_certs
-        self.ca_cert_dir = ca_cert_dir
         self.assert_hostname = assert_hostname
         self.assert_fingerprint = assert_fingerprint
+        self.ca_certs = ca_certs and os.path.expanduser(ca_certs)
+        self.ca_cert_dir = ca_cert_dir and os.path.expanduser(ca_cert_dir)
 
     def connect(self):
         # Add certificate verification
@@ -263,10 +302,24 @@ class VerifiedHTTPSConnection(HTTPSConnection):
                     'for details.)'.format(hostname)),
                     SubjectAltNameWarning
                 )
-            match_hostname(cert, self.assert_hostname or hostname)
+            _match_hostname(cert, self.assert_hostname or hostname)
 
-        self.is_verified = (resolved_cert_reqs == ssl.CERT_REQUIRED
-                            or self.assert_fingerprint is not None)
+        self.is_verified = (resolved_cert_reqs == ssl.CERT_REQUIRED or
+                            self.assert_fingerprint is not None)
+
+
+def _match_hostname(cert, asserted_hostname):
+    try:
+        match_hostname(cert, asserted_hostname)
+    except CertificateError as e:
+        log.error(
+            'Certificate did not match expected hostname: %s. '
+            'Certificate: %s', asserted_hostname, cert
+        )
+        # Add cert to exception and reraise so client code can inspect
+        # the cert when catching the exception, if they want to
+        e._peer_cert = cert
+        raise
 
 
 if ssl:
